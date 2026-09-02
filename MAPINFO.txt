@@ -1,0 +1,7 @@
+// One handler: the two-handed pin pull. The face route needs no handler at all
+// -- RS_Route already runs that gesture and reaches the grenade through
+// TryPickup. See the note on that override.
+GameInfo
+{
+	AddEventHandlers = "RS_VRGrenadeHandler"
+}

@@ -1,0 +1,264 @@
+// THE GRENADE MODEL, from RS_Main.
+//
+// ONE POSE ON EVERY FRAME, and that is RS_Main's finding carried over rather
+// than rediscovered: a sprite-frame cycle does nothing to a model, so the
+// tumble has to be REAL rotation. RS_VRGrenade.Tick spins roll and pitch by 13
+// and 7 degrees a tic once it leaves your hand, and the model follows because
+// of the two USEACTOR flags below.
+//
+// A Skin line, because its absence is silent: the model renderers skip a mesh
+// outright when no skin resolves -- no warning, no error, no draw.
+Model RS_VRGrenadeThrown
+{
+	Path "models/grenade"
+	Model 0 "nade.md3"
+	Skin 0 "nade.png"
+	Scale 0.3 0.3 0.3
+	Offset 0.0 0.0 0.0
+
+	// FLAGS BEFORE THE FrameIndex LINES. Each FrameIndex pushes a COPY of the
+	// in-progress frame carrying whatever flags are set at that moment, so a
+	// flag written after the last one parses cleanly and applies to nothing.
+	NoInterpolation
+	USEACTORPITCH
+	USEACTORROLL
+
+
+	// THE MESH IS THE STATE MACHINE, and this mapping is why the model was worth
+	// keeping. Measured out of the file: the pin ring and the safety lever are
+	// separate surfaces, animated independently across 27 frames.
+	//
+	//   0-7    ring present, lever present    safe
+	//   8-9    ring shrinking to nothing      the pin actually coming out
+	//   10-15  ring gone, lever still on      pin pulled, lever held by your grip
+	//   16-26  both gone                      lever flown, in flight
+	//
+	// So every state has a pose that already exists and nothing is faked. Eight
+	// sprite letters is all JGRN has, which is exactly enough.
+	// ONE POSE IN THE HAND, AND IT IS FRAME 0.
+	//
+	// NO FRAME IN THIS MESH CAN SHOW THE PIN OUT WITHOUT MOVING THE GRENADE.
+	// Measured: the body centroid is at z=-21.07 on frame 0 and z=-1.28 on every
+	// frame from 2 to 10, because 0 and 1 are the tail of Brutal Doom's DRAW
+	// animation, which swings the whole grenade up into view. So "safe" on 0 and
+	// "pin out" on 10 moves the body twenty units -- the dancing.
+	//
+	// Moving BOTH poses onto the 2-10 group fixes the dance and moves where the
+	// grenade sits, which throws away seating that was found by hand in a
+	// headset. That is the worse trade. So: one pose, frame 0, never changed.
+	//
+	// The pin coming out is reported by sound and haptics instead. If it needs to
+	// be visible, the answer is a mesh whose ring can leave without the body
+	// moving -- not a frame choice, because this mesh does not contain one.
+	FrameIndex JGRN A 0 0     // the ONLY pose used in hand
+	FrameIndex JGRN B 0 8     // ring going   -- same body
+	FrameIndex JGRN C 0 9     // ring nearly  -- same body
+	FrameIndex JGRN D 0 10    // ring gone    -- same body
+	FrameIndex JGRN G 0 16    // lever flown -- in flight only
+}
+
+
+// THE GRENADE IN YOUR HAND -- one block per controller.
+//
+// SEATED BY THE RENDERER, NOT BY THE PLAYSIM. FollowMainHand/FollowOffHand take
+// the transform straight from GetWeaponTransform at DRAW time, the same wire
+// the world hands ride. The alternative -- letting RS_Held carry the actor with
+// TryMove -- is Doom movement, and Doom movement COLLIDES: the grenade orbited
+// the hand at player-radius plus its own instead of sitting in the palm, which
+// is exactly the failure rs_held.zs already documents for barrels.
+//
+// Two classes because MODELDEF binds per class and a Follow flag names one
+// specific controller. The prop is spawned for whichever hand holds it.
+//
+// SCALE IS IN METRES. Downstream of a Follow flag the engine has already
+// applied vr_vunits_per_meter, so mesh space is metres and NOT map units --
+// this is the distinction that hid the world hands completely. Body mesh
+// measures 15.95 units on its long axis; a 0.09 m grenade is 0.09 / 15.95 =
+// 0.005642.
+
+Model RS_VRGrenadeHeldMain
+{
+	Path "models/grenade"
+	Model 0 "nade.md3"
+	Skin 0 "nade.png"
+	PlacementCVars rsvg_hm
+	Scale 0.005642 0.005642 0.005642
+	Offset 0.0 0.0 0.0
+	AngleOffset 0.0
+	PitchOffset 0.0
+	RollOffset 0.0
+	NoInterpolation
+	NOAUTOREVERSE
+	FollowMainHand
+
+	// THE MESH IS THE STATE MACHINE, and this mapping is why the model was worth
+	// keeping. Measured out of the file: the pin ring and the safety lever are
+	// separate surfaces, animated independently across 27 frames.
+	//
+	//   0-7    ring present, lever present    safe
+	//   8-9    ring shrinking to nothing      the pin actually coming out
+	//   10-15  ring gone, lever still on      pin pulled, lever held by your grip
+	//   16-26  both gone                      lever flown, in flight
+	//
+	// So every state has a pose that already exists and nothing is faked. Eight
+	// sprite letters is all JGRN has, which is exactly enough.
+	// ONE POSE IN THE HAND, AND IT IS FRAME 0.
+	//
+	// NO FRAME IN THIS MESH CAN SHOW THE PIN OUT WITHOUT MOVING THE GRENADE.
+	// Measured: the body centroid is at z=-21.07 on frame 0 and z=-1.28 on every
+	// frame from 2 to 10, because 0 and 1 are the tail of Brutal Doom's DRAW
+	// animation, which swings the whole grenade up into view. So "safe" on 0 and
+	// "pin out" on 10 moves the body twenty units -- the dancing.
+	//
+	// Moving BOTH poses onto the 2-10 group fixes the dance and moves where the
+	// grenade sits, which throws away seating that was found by hand in a
+	// headset. That is the worse trade. So: one pose, frame 0, never changed.
+	//
+	// The pin coming out is reported by sound and haptics instead. If it needs to
+	// be visible, the answer is a mesh whose ring can leave without the body
+	// moving -- not a frame choice, because this mesh does not contain one.
+	FrameIndex JGRN A 0 0     // the ONLY pose used in hand
+	FrameIndex JGRN B 0 8     // ring going   -- same body
+	FrameIndex JGRN C 0 9     // ring nearly  -- same body
+	FrameIndex JGRN D 0 10    // ring gone    -- same body
+	FrameIndex JGRN G 0 16    // lever flown -- in flight only
+}
+
+Model RS_VRGrenadeHeldOff
+{
+	Path "models/grenade"
+	Model 0 "nade.md3"
+	Skin 0 "nade.png"
+	PlacementCVars rsvg_ho
+	Scale 0.005642 0.005642 0.005642
+	Offset 0.0 0.0 0.0
+	AngleOffset 0.0
+	PitchOffset 0.0
+	RollOffset 0.0
+	NoInterpolation
+	NOAUTOREVERSE
+	FollowOffHand
+
+	// THE MESH IS THE STATE MACHINE, and this mapping is why the model was worth
+	// keeping. Measured out of the file: the pin ring and the safety lever are
+	// separate surfaces, animated independently across 27 frames.
+	//
+	//   0-7    ring present, lever present    safe
+	//   8-9    ring shrinking to nothing      the pin actually coming out
+	//   10-15  ring gone, lever still on      pin pulled, lever held by your grip
+	//   16-26  both gone                      lever flown, in flight
+	//
+	// So every state has a pose that already exists and nothing is faked. Eight
+	// sprite letters is all JGRN has, which is exactly enough.
+	// ONE POSE IN THE HAND, AND IT IS FRAME 0.
+	//
+	// NO FRAME IN THIS MESH CAN SHOW THE PIN OUT WITHOUT MOVING THE GRENADE.
+	// Measured: the body centroid is at z=-21.07 on frame 0 and z=-1.28 on every
+	// frame from 2 to 10, because 0 and 1 are the tail of Brutal Doom's DRAW
+	// animation, which swings the whole grenade up into view. So "safe" on 0 and
+	// "pin out" on 10 moves the body twenty units -- the dancing.
+	//
+	// Moving BOTH poses onto the 2-10 group fixes the dance and moves where the
+	// grenade sits, which throws away seating that was found by hand in a
+	// headset. That is the worse trade. So: one pose, frame 0, never changed.
+	//
+	// The pin coming out is reported by sound and haptics instead. If it needs to
+	// be visible, the answer is a mesh whose ring can leave without the body
+	// moving -- not a frame choice, because this mesh does not contain one.
+	FrameIndex JGRN A 0 0     // the ONLY pose used in hand
+	FrameIndex JGRN B 0 8     // ring going   -- same body
+	FrameIndex JGRN C 0 9     // ring nearly  -- same body
+	FrameIndex JGRN D 0 10    // ring gone    -- same body
+	FrameIndex JGRN G 0 16    // lever flown -- in flight only
+}
+
+
+// THE SAME GRENADE, DRAWN THE OTHER WAY.
+//
+// Two ways to have it in your hand, chosen by rsvg_psprite, because neither is
+// simply better:
+//
+//   PSPRITE (this block)  drawn on the weapon layer, exactly like every gun.
+//     Inherits whatever you already tuned for your hands and needs no separate
+//     actor. But a psprite is drawn OVER the world -- put your hand behind a
+//     wall and the grenade shows through it -- and it is lit by the HUD path
+//     rather than by the room it is in.
+//
+//   WORLD ACTOR (RS_VRGrenadeHeldMain/Off above)  a real thing in the room, so
+//     it is occluded by geometry and lit by the sector. Costs a second actor
+//     and its own seating.
+//
+// Nothing in the gestures depends on which: the pin and the throw read palm and
+// HMD positions, which are real either way.
+//
+// SCALE 0.5643, AND THE DIFFERENCE FROM 0.005642 IS EXACTLY 100.
+// RenderHUDModel applies a further scale(0.01f) on top of GetWeaponTransform
+// (models.cpp:934-937) that the world path does not. So the same mesh at the
+// same real size needs a number one hundred times larger here. 15.95 mesh units
+// x 0.01 = 0.1595 m at Scale 1.0, and 0.09 / 0.1595 = 0.5643.
+Model RS_VRGrenade
+{
+	Path "models/grenade"
+	Model 0 "nade.md3"
+	Skin 0 "nade.png"
+	PlacementCVars rsvg_ps
+	Scale 0.5643 0.5643 0.5643
+	Offset 0.0 0.0 0.0
+	UseHandOffsets
+	NOAUTOREVERSE
+	NoInterpolation
+	PitchOffset 90.0
+	RollOffset 0.0
+	AngleOffset 0.0
+	FrameIndex JGRN A 0 0
+}
+
+// The dud lying on the floor. Same mesh and same world scale as the thrown one.
+Model RSVG_Pickup
+{
+	Path "models/grenade"
+	Model 0 "nade.md3"
+	Skin 0 "nade.png"
+	Scale 0.3 0.3 0.3
+	Offset 0.0 0.0 0.0
+
+	// FLAGS BEFORE THE FrameIndex LINES. Each FrameIndex pushes a COPY of the
+	// in-progress frame carrying whatever flags are set at that moment, so a
+	// flag written after the last one parses cleanly and applies to nothing.
+	NoInterpolation
+	USEACTORPITCH
+	USEACTORROLL
+
+
+	// THE MESH IS THE STATE MACHINE, and this mapping is why the model was worth
+	// keeping. Measured out of the file: the pin ring and the safety lever are
+	// separate surfaces, animated independently across 27 frames.
+	//
+	//   0-7    ring present, lever present    safe
+	//   8-9    ring shrinking to nothing      the pin actually coming out
+	//   10-15  ring gone, lever still on      pin pulled, lever held by your grip
+	//   16-26  both gone                      lever flown, in flight
+	//
+	// So every state has a pose that already exists and nothing is faked. Eight
+	// sprite letters is all JGRN has, which is exactly enough.
+	// ONE POSE IN THE HAND, AND IT IS FRAME 0.
+	//
+	// NO FRAME IN THIS MESH CAN SHOW THE PIN OUT WITHOUT MOVING THE GRENADE.
+	// Measured: the body centroid is at z=-21.07 on frame 0 and z=-1.28 on every
+	// frame from 2 to 10, because 0 and 1 are the tail of Brutal Doom's DRAW
+	// animation, which swings the whole grenade up into view. So "safe" on 0 and
+	// "pin out" on 10 moves the body twenty units -- the dancing.
+	//
+	// Moving BOTH poses onto the 2-10 group fixes the dance and moves where the
+	// grenade sits, which throws away seating that was found by hand in a
+	// headset. That is the worse trade. So: one pose, frame 0, never changed.
+	//
+	// The pin coming out is reported by sound and haptics instead. If it needs to
+	// be visible, the answer is a mesh whose ring can leave without the body
+	// moving -- not a frame choice, because this mesh does not contain one.
+	FrameIndex JGRN A 0 0     // the ONLY pose used in hand
+	FrameIndex JGRN B 0 8     // ring going   -- same body
+	FrameIndex JGRN C 0 9     // ring nearly  -- same body
+	FrameIndex JGRN D 0 10    // ring gone    -- same body
+	FrameIndex JGRN G 0 16    // lever flown -- in flight only
+}

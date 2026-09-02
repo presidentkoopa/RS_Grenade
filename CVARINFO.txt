@@ -1,0 +1,135 @@
+﻿user bool  rsvg_enable = true;
+
+// WHEN THE FUSE LIGHTS. The one decision that sets the whole feel.
+//   true  -- the PIN starts it. Holding a live grenade is dangerous, cooking
+//            works, and fumbling drops it lit at your feet.
+//   false -- the LEVER starts it, as a real grenade does. Safe, no tension.
+// OFF BY DEFAULT, for now. The fuse starts when the lever flies rather than
+// when the pin comes out, so nothing can detonate in your hand.
+//
+// Cooking is the better feature and this should go back to true once the pin
+// gestures are trustworthy -- but a default that can kill you every three
+// seconds because an unrelated gesture misfired is not a default, it is a trap.
+user bool  rsvg_cook = false;
+user float rsvg_fuse = 3.0;
+
+// NO PIN-REACH CVAR. How close the free hand must be is the OVAL's question,
+// answered by RS_Reach.ScoreAt against the volume rs_grab_o_scale_* sizes and
+// RS_GrabViz draws. A number here would be a second opinion about the same
+// thing, and the two would drift.
+
+// THE FACE ROUTE. Two radii, not one -- see the note in the code. The hand has
+// to have been clear of your head before coming to it, so resting it near your
+// face does nothing.
+user float rsvg_face_near = 16.0;
+user float rsvg_face_far  = 24.0;
+user bool  rsvg_face = true;
+
+// Ships OFF, matching every other subsystem trace in this family.
+user bool  rsvg_debug = false;
+
+user bool rsvg_start = true;
+
+// SEATING THE HELD GRENADE. Metres, like every placement value downstream of a
+// Follow flag -- the menu steps these by 0.01 (a centimetre) for that reason.
+user float rsvg_hm_ofs_x = 0.0;
+user float rsvg_hm_ofs_y = 0.0;
+user float rsvg_hm_ofs_z = 0.0;
+user float rsvg_hm_yaw = 0.0;
+user float rsvg_hm_pitch = 0.0;
+user float rsvg_hm_roll = 0.0;
+user float rsvg_hm_scale = 1.0;
+
+user float rsvg_ho_ofs_x = 0.0;
+user float rsvg_ho_ofs_y = 0.0;
+user float rsvg_ho_ofs_z = 0.0;
+user float rsvg_ho_yaw = 0.0;
+user float rsvg_ho_pitch = 0.0;
+user float rsvg_ho_roll = 0.0;
+user float rsvg_ho_scale = 1.0;
+
+// THE FLIGHT. All four are judged by throwing it, so all four are live.
+// gravity 1.0 is Doom normal; below that floats, above that drops hard.
+// bounce/wallbounce are how much speed survives a hit -- 0 is a dead thud,
+// 1 would never settle. Doom's own rocket-ish default sits near 0.3.
+// throw is a grenade-only trim ON TOP of the shared rs_throw_scale.
+// GRAVITY 0.27, NOT 0.7, AND NOT 1.0.
+//
+// Doom gravity is not earth gravity. One map unit per tic per tic works out to
+// roughly 36 m/s^2 -- about 2.7 times real -- which is why everything in Doom
+// falls like it is made of lead and why a thrown object drops out of the air
+// almost as soon as it leaves your hand.
+//
+// 0.7 was inherited from RS_Main's grenade, where it is right: that one is a
+// PROJECTILE launched at a fixed 10-60 speed, so a heavy fall is what keeps it
+// from sailing. This one leaves at whatever your arm actually did -- around 8
+// m/s for a normal throw -- and under 2.7x gravity that is a descending line
+// rather than a toss.
+//
+// 1 / 2.7 = 0.37 would be exactly earth. 0.27 is a little lighter still,
+// because the throw also has to cover Doom's rooms, which are larger than they
+// look. Tune it -- but start well under 0.5, not near 1.
+user float rsvg_gravity    = 0.27;
+user float rsvg_bounce     = 0.5;
+user float rsvg_wallbounce = 0.25;
+user float rsvg_throw      = 1.0;
+
+
+// THE ARC. A fraction of your throw's horizontal speed added as lift, so it
+// scales with how hard you threw instead of arcing every throw identically.
+// 0 is dead flat -- whatever your arm did and nothing else.
+user float rsvg_lift = 0.35;
+
+// How close the opposite hand has to be to take the pin, palm to palm, in map
+// units. 20 is about 60cm -- deliberately generous, because this is a two-hand
+// act and not a precision test.
+user float rsvg_pin_reach = 20.0;
+
+// Bumped by the code when a default changes for a reason a player should not
+// have to know about. A new cvar has no saved value, so this reads 0 exactly
+// once per install -- which is the only way a corrected default can reach
+// somebody who has already played.
+user int rsvg_cfgver = 0;
+
+// GROUND FRICTION. Doom gives a thrown actor none of its own, so without this a
+// grenade slides until it hits a wall. 1.0 is frictionless ice, lower stops it
+// sooner.
+user float rsvg_friction = 0.82;
+
+// Tumble in the air, degrees per tic. 0 is dead still -- Brutal Doom's grenade
+// does not rotate its model at all and reads fine, so this is taste.
+user float rsvg_spin = 3.5;
+
+// HOW THE HELD GRENADE IS DRAWN. Nothing about the gestures changes -- the pin
+// and the throw read real palm and HMD positions either way.
+//   false -- world actor. Occluded by walls, lit by the room. Its own seating.
+//   true  -- psprite, like every gun. Draws over the world and is lit by the
+//            HUD path, but needs no second actor.
+user bool rsvg_psprite = false;
+
+// Seating for the PSPRITE route. Separate from rsvg_hm/rsvg_ho because the two
+// paths are a factor of 100 apart in scale and are not interchangeable.
+user float rsvg_ps_ofs_x = 0.0;
+user float rsvg_ps_ofs_y = 0.0;
+user float rsvg_ps_ofs_z = 0.0;
+user float rsvg_ps_yaw = 0.0;
+user float rsvg_ps_pitch = 0.0;
+user float rsvg_ps_roll = 0.0;
+user float rsvg_ps_scale = 1.0;
+
+// A THROWN DUD BECOMES A PICKUP when it is at least this old AND you are this
+// close. delay is in tics (35 = one second) and exists so it cannot convert on
+// the way out of your hand; range is in map units (34 = one metre).
+user float rsvg_dud_delay = 35.0;
+user float rsvg_dud_range = 96.0;
+
+// HOW LONG THE GRENADE MUST STAY AT YOUR FACE, in tics (35 = one second).
+// This is what separates bringing it to your mouth from swinging past your head
+// on the way to a throw -- without it, every throw pulled its own pin.
+user float rsvg_face_hold = 12.0;
+
+// ARMING. Off (default): the pin has to come out first -- the other hand's
+// fire within reach, or a dwell at your face -- and a throw with the pin still
+// in is a dud that settles and turns back into a pickup. On: throwing is the
+// arming; every throw is live and the pin is decorative.
+user bool rsvg_autoarm = false;

@@ -1,0 +1,31 @@
+// BARE LUMP NAMES, NOT PATHS.
+//
+// Anything under sounds/ is put in ns_sounds by the file system, and the name
+// it is registered under is the BASE FILENAME with the path and extension
+// stripped (filesystem.cpp:134 for the namespace, :157 for the short name). So
+// sounds/rs_grenade/DSGRPIN is looked up as DSGRPIN, and the full path does not
+// match. RS_Main writes the path form and gets away with it via the
+// full-name fallback, but the short name is the one this lookup is built on.
+rsvg/pin      DSGRPIN
+rsvg/toss     DSGRTOSS
+rsvg/bounce   GBOUNCE
+rsvg/farexpl  FAREXPL
+rsvg/tick     GPIN
+
+// Eight variants so a firefight full of grenades is not one sample on repeat.
+$random rsvg/explode { rsvg_bang1 rsvg_bang2 rsvg_bang3 rsvg_bang4 rsvg_bang5 rsvg_bang6 rsvg_bang7 rsvg_bang8 }
+rsvg_bang1 GBANG1
+rsvg_bang2 GBANG2
+rsvg_bang3 GBANG3
+rsvg_bang4 GBANG4
+rsvg_bang5 GBANG5
+rsvg_bang6 GBANG6
+rsvg_bang7 GBANG7
+rsvg_bang8 GBANG8
+
+$rolloff rsvg/explode 1100 1600
+$rolloff rsvg/farexpl 3200 5400
+$volume  rsvg/farexpl 0.5
+$volume  rsvg/bounce  0.8
+$volume  rsvg/tick    0.6
+$limit   rsvg/tick    2

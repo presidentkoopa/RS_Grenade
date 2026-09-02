@@ -1,0 +1,123 @@
+﻿OptionMenu "RSVG_Options"
+{
+	Title "VR Grenade"
+
+	StaticText ""
+	Option "Universal VR grenade", "rsvg_enable", "OnOff"
+
+	StaticText " "
+	StaticText "ARMING", gold
+	StaticText "Off: pull the pin first (other hand, or your", gold
+	StaticText "face). Thrown with the pin in, it is a dud you", gold
+	StaticText "walk over to get back. On: throwing arms it.", gold
+	Option "Throwing arms it", "rsvg_autoarm", "OnOff"
+	StaticText " "
+	StaticText "WHEN THE FUSE LIGHTS", gold
+	StaticText "On: the pin starts it. Holding a live one is", gold
+	StaticText "dangerous and you can cook it.", gold
+	StaticText "Off: the lever starts it, like a real grenade.", gold
+	Option "Fuse starts on pin pull", "rsvg_cook", "OnOff"
+	Slider "Fuse seconds", "rsvg_fuse", 0.5, 10.0, 0.25, 2
+
+	StaticText " "
+	StaticText "PULLING THE PIN", gold
+	StaticText "Hold the fire button of the hand HOLDING it.", gold
+	StaticText "Then either bring your OPPOSITE hand to it,", gold
+	StaticText "empty, and press that hand's own fire -- or", gold
+	StaticText "bring the grenade to your face and use your", gold
+	StaticText "teeth. Release to throw.", gold
+	Slider "Hand must be within", "rsvg_pin_reach", 4.0, 60.0, 1.0, 1
+
+	StaticText " "
+	StaticText "Or bring it to your face and use your teeth.", gold
+	StaticText "Works with a gun in the other hand -- it costs", gold
+	StaticText "you your view of the room instead.", gold
+	Option "Pin pull at face", "rsvg_face", "OnOff"
+	Slider "  at this range",   "rsvg_face_near", 4.0,  20.0, 0.5, 1
+	Slider "  re-arm beyond",   "rsvg_face_far",  12.0, 50.0, 0.5, 1
+	Slider "  hold it for",     "rsvg_face_hold", 2.0, 40.0, 1.0, 0
+
+	StaticText " "
+	StaticText " "
+
+	StaticText "THE FLIGHT", gold
+	StaticText "Throw is a grenade-only trim on top of the", gold
+	StaticText "shared arm-strength slider in RS Hands.", gold
+	Slider "Throw trim",   "rsvg_throw",      0.25, 4.0, 0.05, 2
+	Slider "Toss arc",     "rsvg_lift",       0.0,  1.5, 0.05, 2
+	StaticText "Doom gravity is ~2.7x real. 0.37 is earth.", gold
+	Slider "Gravity",      "rsvg_gravity",    0.05, 1.0, 0.01, 2
+	Slider "Floor bounce", "rsvg_bounce",     0.0,  0.9, 0.05, 2
+	Slider "Wall bounce",  "rsvg_wallbounce", 0.0,  0.9, 0.05, 2
+	Slider "Ground drag",  "rsvg_friction",   0.30, 1.0, 0.02, 2
+	Slider "Tumble",       "rsvg_spin",       0.0,  12.0, 0.5, 1
+
+	StaticText "A dud you walk up to settles and becomes", gold
+	StaticText "collectable. Delay is tics, range map units.", gold
+	Slider "Dud delay",    "rsvg_dud_delay",  0.0,  140.0, 5.0, 0
+	Slider "Dud range",    "rsvg_dud_range",  16.0, 320.0, 8.0, 0
+
+	StaticText " "
+	StaticText "World actor: occluded by walls, lit by the", gold
+	StaticText "room. Psprite: like a gun, draws over the", gold
+	StaticText "world. Gestures are identical either way.", gold
+	Option "Draw as psprite", "rsvg_psprite", "OnOff"
+	Submenu "Seat it in the hand...", "RSVG_Place"
+	Submenu "Seat the psprite...",   "RSVG_PlacePS"
+
+	Option "Log pin and fuse", "rsvg_debug", "OnOff"
+}
+
+AddOptionMenu "OptionsMenu"
+{
+	Submenu "VR Grenade", "RSVG_Options"
+}
+
+AddOptionMenu "OptionsMenuSimple"
+{
+	Submenu "VR Grenade", "RSVG_Options"
+}
+
+OptionMenu "RSVG_Place"
+{
+	Title "Grenade In Hand"
+
+	StaticText "Offsets are METRES -- 0.01 is a centimetre.", gold
+
+	StaticText "  main hand", 1
+	Slider "M Left / Right",   "rsvg_hm_ofs_x", -0.5, 0.5, 0.01, 2
+	Slider "M Forward / Back", "rsvg_hm_ofs_y", -0.5, 0.5, 0.01, 2
+	Slider "M Down / Up",      "rsvg_hm_ofs_z", -0.5, 0.5, 0.01, 2
+	Slider "M Yaw",   "rsvg_hm_yaw",   -180, 180, 1, 1
+	Slider "M Pitch", "rsvg_hm_pitch", -180, 180, 1, 1
+	Slider "M Roll",  "rsvg_hm_roll",  -180, 180, 1, 1
+	Slider "M Scale", "rsvg_hm_scale", 0.1, 5.0, 0.05, 2
+
+	StaticText "  off hand", 1
+	Slider "O Left / Right",   "rsvg_ho_ofs_x", -0.5, 0.5, 0.01, 2
+	Slider "O Forward / Back", "rsvg_ho_ofs_y", -0.5, 0.5, 0.01, 2
+	Slider "O Down / Up",      "rsvg_ho_ofs_z", -0.5, 0.5, 0.01, 2
+	Slider "O Yaw",   "rsvg_ho_yaw",   -180, 180, 1, 1
+	Slider "O Pitch", "rsvg_ho_pitch", -180, 180, 1, 1
+	Slider "O Roll",  "rsvg_ho_roll",  -180, 180, 1, 1
+	Slider "O Scale", "rsvg_ho_scale", 0.1, 5.0, 0.05, 2
+
+	SafeCommand "Reset", "resetcvar rsvg_hm_ofs_x rsvg_hm_ofs_y rsvg_hm_ofs_z rsvg_hm_yaw rsvg_hm_pitch rsvg_hm_roll rsvg_hm_scale rsvg_ho_ofs_x rsvg_ho_ofs_y rsvg_ho_ofs_z rsvg_ho_yaw rsvg_ho_pitch rsvg_ho_roll rsvg_ho_scale"
+}
+
+
+OptionMenu "RSVG_PlacePS"
+{
+	Title "Grenade Psprite"
+
+	StaticText "Psprite offsets are in MODEL units, not", gold
+	StaticText "metres -- this path is 100x the world one.", gold
+	Slider "Left / Right",   "rsvg_ps_ofs_x", -40, 40, 0.5, 2
+	Slider "Forward / Back", "rsvg_ps_ofs_y", -40, 40, 0.5, 2
+	Slider "Down / Up",      "rsvg_ps_ofs_z", -40, 40, 0.5, 2
+	Slider "Yaw",            "rsvg_ps_yaw",   -180, 180, 1, 1
+	Slider "Pitch",          "rsvg_ps_pitch", -180, 180, 1, 1
+	Slider "Roll",           "rsvg_ps_roll",  -180, 180, 1, 1
+	Slider "Scale",          "rsvg_ps_scale", 0.1, 3.0, 0.05, 2
+	SafeCommand "Reset", "resetcvar rsvg_ps_ofs_x rsvg_ps_ofs_y rsvg_ps_ofs_z rsvg_ps_yaw rsvg_ps_pitch rsvg_ps_roll rsvg_ps_scale"
+}

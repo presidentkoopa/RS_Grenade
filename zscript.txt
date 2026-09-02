@@ -1,0 +1,12 @@
+version "4.12"
+
+// RS_Grenade -- the universal VR grenade, as its own pk3.
+//
+// LOAD ORDER IS A HARD REQUIREMENT: this must load AFTER RS_VR_Unified.pk3.
+// It calls RS_Held, RS_Reach and RS_Throw by name, and a ZScript class cannot
+// be referenced before the pk3 that defines it has compiled. Loaded first,
+// every one of those names is an unknown-class error -- which is FATAL AND
+// GLOBAL and takes down every pk3 after it too.
+
+#include "zscript/rs_blast.zs"
+#include "zscript/rs_vrgrenade.zs"
