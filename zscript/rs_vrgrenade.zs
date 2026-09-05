@@ -54,6 +54,8 @@ class RS_VRGrenade : Weapon
 	const FR_PULL_B  = 2;   // C -- ring nearly gone
 	const FR_LEVER_A = 3;   // D -- pin out, lever held
 	const FR_LIVE    = 6;   // G -- lever flown
+	const FR_SAFE_R  = 4;   // E -- safe, red skin
+	const FR_LIVE_R  = 5;   // F -- live, red skin
 
 	// Long enough that the ring reads as pulled rather than swapped, short
 	// enough that it is not a cutscene.
@@ -75,6 +77,10 @@ class RS_VRGrenade : Weapon
 	bool wasOtherFire;  // the opposite hand's own trigger
 	bool wasFaceNear;   // face gesture, edge-detected on arrival
 	int  faceTic;       // consecutive tics held at the face -- see the dwell note
+	bool wantPrompt;    // a pin route is available RIGHT NOW -- drives the amber
+	bool wasReady;      // so the "you can pull now" cue fires once, not per tic
+	int  pinFlash;      // tics of extra brightness right after the pin comes out
+	Actor fuseLight;    // see the note on UpdateFuseLight
 
 	Actor prop;         // the drawn model, riding the controller
 	int   propHand;
@@ -137,6 +143,71 @@ class RS_VRGrenade : Weapon
 	// Which physical hand this weapon is in. The engine already knows.
 	int Hand() const { return bOffhandWeapon ? 1 : 0; }
 
+	// ---- NO DEPENDENCY ON RS_VR_UNIFIED ------------------------------------
+	//
+	// This used to call RS_Reach.Centre and RS_Throw.VelocityFor, which meant
+	// RS_VR_Unified.pk3 HAD to compile first -- and ZScript resolves classes in
+	// load order, so being listed above it is a fatal error that takes down every
+	// pk3 after it too. That broke three times across three different folder
+	// layouts, because "RS_Grenade" sorts before "RS_VR_Unified" and any loader
+	// listing a directory alphabetically gets it wrong by default.
+	//
+	// A load-order rule that is invisible until it detonates is not a rule worth
+	// keeping when the alternative is this small. Both things it needed are on
+	// the pawn natively (actor.zs:390, :412), so it now asks the engine directly
+	// and works in any order.
+	//
+	// WHAT IS GIVEN UP, stated honestly: RS_Reach.Centre refines the controller
+	// position to the HANDPALM_joint bone of the world hand model when one is
+	// present, and applies the user's grab-volume offsets. This does not. For a
+	// grenade that is drawn at its own tuned offset from the controller anyway,
+	// the wrist is the right anchor and the bone would be a second opinion.
+	Vector3 Palm(PlayerPawn pmo, int hand) const
+	{
+		return (hand == 0) ? pmo.AttackPos : pmo.OffhandPos;
+	}
+
+	// THE THROW, MEASURED HERE.
+	//
+	// The same shape as RS_Throw: the PEAK of the hand's motion over roughly the
+	// last 180ms, not its speed at the instant you let go. By the time your
+	// fingers open your arm is already slowing, and a throw built on that reads
+	// limp no matter how hard it felt -- no amount of scaling fixes it, because
+	// the number being scaled is the deceleration.
+	//
+	// Measured RELATIVE to the pawn and the pawn's own velocity added back at the
+	// end, so walking or riding a lift is not mistaken for a throw, and so a
+	// grenade thrown while sprinting is not left behind by exactly your own speed.
+	const SWING_SAMPLES = 7;          // ~180ms at 35 tics
+	private Vector3 swing[SWING_SAMPLES];
+	private Vector3 lastPalm;
+	private int  swingIdx;
+	private bool swingPrimed;
+
+	private void TrackSwing(PlayerPawn pmo, int hand)
+	{
+		Vector3 now = Palm(pmo, hand);
+		if (!swingPrimed) { lastPalm = now; swingPrimed = true; return; }
+
+		// Per-tic delta minus the pawn's own movement -- the hand's motion in the
+		// player's frame, which is what a throw actually is.
+		swing[swingIdx] = (now - lastPalm) - pmo.Vel;
+		swingIdx = (swingIdx + 1) % SWING_SAMPLES;
+		lastPalm = now;
+	}
+
+	private Vector3 SwingPeak(PlayerPawn pmo) const
+	{
+		Vector3 best = (0, 0, 0);
+		double bestLen = 0;
+		for (int i = 0; i < SWING_SAMPLES; i++)
+		{
+			double l = swing[i].Length();
+			if (l > bestLen) { bestLen = l; best = swing[i]; }
+		}
+		return best + pmo.Vel;
+	}
+
 	bool InHand() const
 	{
 		if (!Owner || !Owner.player) return false;
@@ -177,6 +248,79 @@ class RS_VRGrenade : Weapon
 		}
 	}
 
+	// ---- THE FUSE, SEEN RATHER THAN COUNTED --------------------------------
+	//
+	// Red / neutral / red, accelerating as the fuse burns down. The sound already
+	// carries the same information, but sound is easy to lose in a firefight and
+	// a grenade in your own hand is exactly when you cannot afford to lose it.
+	//
+	// STENCIL, NOT A TINT OR A SECOND SKIN. A 3D model cannot simply be "coloured"
+	// the way a sprite can: MODELDEF translations are palette remaps and this mesh
+	// is skinned with a truecolor PNG, so a Translation would do nothing at all.
+	// RenderStyle Stencil draws the whole mesh in one flat colour taken from the
+	// actor's shade, which works on any model regardless of how it is skinned and
+	// needs no new art. Alternating it with Normal is the flash.
+	//
+	// A second red-skinned copy of the mesh at model index 1 would look better --
+	// detail kept, only the colour changed -- and is worth doing if this reads as
+	// too blunt. It needs a tinted nade.png that does not exist yet.
+	//
+	// STATIC, one shared helper, because the held prop and the thrown grenade are
+	// different actors that both need it and must pulse identically -- a grenade
+	// that flashes at one rate in your hand and another in the air is telling you
+	// two different things about one fuse.
+	// ---- READY TO TAKE THE PIN ---------------------------------------------
+	//
+	// AMBER, STEADY, AND NOT RED. Before this there was no way to tell that the
+	// opposite hand was close enough or that the face dwell was filling: you made
+	// the gesture, nothing happened, and there was no way to know whether you had
+	// missed the range, missed the hold, or whether the whole thing was broken.
+	// That is the worst kind of interface -- it gives you nothing to correct.
+	//
+	// Deliberately a different colour from the fuse flash and deliberately steady
+	// rather than pulsing, so "you may pull the pin now" can never be mistaken for
+	// "this is about to go off". One means act, the other means throw.
+	static void ShowReady(Actor a, bool ready)
+	{
+		if (!a) return;
+		if (ready)
+		{
+			a.SetShade("FFC040");
+			a.A_SetRenderStyle(1.0, STYLE_Stencil);
+		}
+		else
+		{
+			a.A_SetRenderStyle(1.0, STYLE_Normal);
+		}
+	}
+
+	static void PulseFuse(Actor a, int fuseLeft, bool on)
+	{
+		if (!a) return;
+		if (!on || fuseLeft < 0)
+		{
+			a.A_SetRenderStyle(1.0, STYLE_Normal);
+			return;
+		}
+
+		// PERIOD FROM THE FUSE ITSELF, so it accelerates continuously instead of
+		// stepping between a "slow" and a "fast" mode. 18 tics apart at three
+		// seconds out, down to 3 at the end -- fast enough at the finish to read
+		// as panic without strobing.
+		int period = clamp(3 + fuseLeft / 6, 3, 18);
+		bool red = ((fuseLeft / period) & 1) == 0;
+
+		if (red)
+		{
+			a.SetShade("FF2010");
+			a.A_SetRenderStyle(1.0, STYLE_Stencil);
+		}
+		else
+		{
+			a.A_SetRenderStyle(1.0, STYLE_Normal);
+		}
+	}
+
 	// ---- THE DRAWN MODEL ---------------------------------------------------
 	//
 	// SEATED BY THE RENDERER, NOT THE PLAYSIM. The prop carries FollowMainHand /
@@ -200,6 +344,14 @@ class RS_VRGrenade : Weapon
 		let psp = Owner.player.FindPSprite(
 			bOffhandWeapon ? PSP_OFFHANDWEAPON : PSP_WEAPON);
 		if (psp) psp.alpha = ps ? 1.0 : 0.0;
+
+		// AND THE PSPRITE ITSELF, when that is the route being drawn. The prop is
+		// not spawned in this mode, so the flash has to be written to the weapon's
+		// own layer or it simply would not appear -- which is exactly why it only
+		// ever flashed once thrown.
+		if (ps && psp)
+			psp.frame = (lit && Flag("rsvg_flash", true) && FuseRed())
+				? FR_SAFE_R : FR_SAFE;
 
 		if (ps) { DropProp(); return; }
 		UpdateProp();
@@ -233,6 +385,91 @@ class RS_VRGrenade : Weapon
 		// shows the pin out without also moving the body, and moving the body
 		// throws away seating that was found by hand in a headset.
 		prop.frame = FR_SAFE;
+
+		// The prop is what you are looking at while it is held, so both signals go
+		// on that rather than on the weapon actor -- which lives in your pocket and
+		// is never drawn.
+		//
+		// THE LIT FUSE WINS. Once it is burning, "ready to pull" is no longer
+		// information you need and the countdown is the only thing that matters.
+		// A frame change, not a render style. See the MODELDEF note: the red pose
+		// is the same mesh wearing a second skin, which is the only thing that
+		// works on the psprite path as well as the world one.
+		if (lit && Flag("rsvg_flash", true))
+			prop.frame = FuseRed() ? FR_SAFE_R : FR_SAFE;
+		else
+			ShowReady(prop, wantPrompt);
+	}
+
+	// ---- THE FUSE, VISIBLE IN EITHER DRAW MODE -----------------------------
+	//
+	// A LIGHT, NOT A TINT, AND THE REASON IS IN THE RENDERER. The flash used to
+	// be RenderStyle Stencil on the held prop, which works -- but ONLY in
+	// world-actor mode. With rsvg_psprite on there is no prop at all, and a
+	// psprite-drawn model cannot be coloured per-weapon anyway: RenderHUDModel
+	// passes playermo->RenderStyle (models.cpp:1408) -- the PLAYER's style -- so
+	// stencilling would tint the whole player rather than the grenade. That is
+	// exactly why it flashed once thrown and never while held.
+	//
+	// A dynamic light is ATTACHED to an actor rather than drawn as part of one,
+	// so it does not care how, or whether, the grenade itself is rendered. One
+	// mechanism, both modes -- and it lights the room around your hand, which
+	// with a darkness mod loaded is far louder than a colour change on an object
+	// this small could ever be.
+	//
+	// On its own actor because in psprite mode there is nothing at the hand to
+	// attach it to: the weapon is in your pocket and the prop does not exist.
+	private void UpdateFuseLight(PlayerPawn pmo, int hand)
+	{
+		// THE LIGHT IS OFF BY DEFAULT NOW. It worked -- too well. A point light
+		// bright enough to be unmistakable on the grenade also lit the whole room
+		// through it, which with a darkness mod loaded is a flashbang in your hand
+		// every three seconds. The red skin says the same thing and stays on the
+		// object it is describing.
+		//
+		// Kept behind a switch rather than deleted, because in genuinely black
+		// rooms it is the only thing that shows where a thrown one landed.
+		if (!lit || !Flag("rsvg_light", false))
+		{
+			if (fuseLight) { fuseLight.Destroy(); fuseLight = null; }
+			pinFlash = 0;
+			return;
+		}
+
+		if (!fuseLight)
+			fuseLight = Actor.Spawn("RSVG_FuseLight", Palm(pmo, hand), NO_REPLACE);
+		if (!fuseLight) return;
+
+		fuseLight.SetOrigin(Palm(pmo, hand), false);
+
+		// THE SAME CADENCE AS THE SOUND AND AS THE THROWN GRENADE'S OWN FLASH.
+		// Three channels telling one story: if they disagreed about how much time
+		// was left, the grenade would be lying to you in two of them.
+		int period = clamp(3 + fuse / 6, 3, 18);
+		bool on = ((fuse / period) & 1) == 0;
+
+		// The pin flash rides on top -- a brief brightness the ordinary pulse never
+		// reaches, so "it just came out" reads differently from "it is counting".
+		int r = on ? 96 : 24;
+		bool burst = pinFlash > 0;
+		if (burst) { r = 200; pinFlash--; }
+
+		fuseLight.A_AttachLight('rsvg_fuse', DynamicLight.PointLight,
+			burst ? Color(255, 255, 210) : Color(255, 48, 24), r, r);
+	}
+
+	// ONE CADENCE, SHARED. The skin flash, the light and the ticking all read
+	// this, so they cannot disagree about how much time is left -- three signals
+	// out of step would be the grenade lying to you in two of them.
+	//
+	// The period shortens continuously from the fuse itself rather than stepping
+	// between a slow and a fast mode: 18 tics apart at three seconds out, down to
+	// 3 at the end. Fast enough at the finish to read as panic without strobing.
+	bool FuseRed() const
+	{
+		if (fuse < 0) return false;
+		int period = clamp(3 + fuse / 6, 3, 18);
+		return ((fuse / period) & 1) == 0;
 	}
 
 	private void DropProp()
@@ -249,13 +486,13 @@ class RS_VRGrenade : Weapon
 	private void ThrowIt(PlayerPawn pmo, PlayerInfo p)
 	{
 		int hand = Hand();
-		Vector3 palm = RS_Reach.Centre(pmo, p, hand);
+		Vector3 palm = Palm(pmo, hand);
 
-		// The velocity is RS_Throw's: the PEAK of your arm's motion over the last
+		// The velocity is the PEAK of your arm's motion over the last
 		// ~180ms rather than its speed at the instant you let go. Your arm is
 		// already slowing by then, and a throw built on that reads limp however
 		// hard it felt.
-		Vector3 v = RS_Throw.VelocityFor(hand, pmo, p) * Num("rsvg_throw", 1.0);
+		Vector3 v = SwingPeak(pmo) * Num("rsvg_throw", 1.0);
 
 		// THE ARC.
 		//
@@ -289,7 +526,7 @@ class RS_VRGrenade : Weapon
 			palm = (palm.x + dir.x * clearBy, palm.y + dir.y * clearBy, palm.z);
 		}
 
-		let g = RS_VRGrenadeThrown(Actor.Spawn("RS_VRGrenadeThrown", palm, ALLOW_REPLACE));
+		let g = RS_VRGrenadeThrown(Actor.Spawn("RS_VRGrenadeThrown", palm, NO_REPLACE));
 		if (g)
 		{
 			g.target = pmo;          // credits the kill, the obituary and the score
@@ -361,8 +598,14 @@ class RS_VRGrenade : Weapon
 		UpdateDrawn();
 
 		int hand  = Hand();
+		UpdateFuseLight(pmo, hand);
 		int other = 1 - hand;
 		bool trig = Trigger(p, hand);
+
+		// EVERY TIC, NOT ONLY WHILE THE TRIGGER IS HELD. The window opens partway
+		// into a swing as often as not, and a throw sampled only from the moment
+		// you decided to throw has already missed the fastest part of it.
+		TrackSwing(pmo, hand);
 
 		// The ring coming out runs on its own clock, so the gesture that started
 		// it does not have to hold a hand still while it plays.
@@ -418,7 +661,7 @@ class RS_VRGrenade : Weapon
 			wasOtherFire = true;
 			wasFaceNear  = true;
 			DropProp();
-			Actor.Spawn("RSVG_Blast", pmo.Pos, ALLOW_REPLACE);
+			Actor.Spawn("RSVG_Blast", pmo.Pos, NO_REPLACE);
 			pmo.DamageMobj(pmo, pmo, 200, 'Explosive');
 			DepleteAmmo(false, true);
 			return;
@@ -442,10 +685,13 @@ class RS_VRGrenade : Weapon
 		{
 			wasOtherFire = false;
 			wasFaceNear  = false;
+			wantPrompt   = false;
+			wasReady     = false;
+			faceTic      = 0;
 			return;
 		}
 
-		Vector3 palm = RS_Reach.Centre(pmo, p, hand);
+		Vector3 palm = Palm(pmo, hand);
 
 		// ---- THE OPPOSITE HAND TAKES THE PIN -------------------------------
 		//
@@ -461,11 +707,19 @@ class RS_VRGrenade : Weapon
 		// own number, with its own slider, is the honest version.
 		//
 		// EDGE, not level: a held trigger takes one pin, not one every tic.
-		Vector3 opp = RS_Reach.Centre(pmo, p, other);
+		Vector3 opp = Palm(pmo, other);
 		bool onIt   = (opp - palm).Length() <= Num("rsvg_pin_reach", 20.0);
 		bool ofire  = Trigger(p, other);
 
-		if (ofire && !wasOtherFire && onIt)
+		// OFF BY DEFAULT. Two hands and a small object at arm's length is a finicky
+		// gesture: the reach has to be generous enough to hit reliably, which makes
+		// it loose enough to fire when you did not mean it, and there is no third
+		// number that resolves that. The face route asks for one hand and a
+		// deliberate hold, and does the same job better.
+		//
+		// Kept rather than deleted -- it works, and it is the only route that leaves
+		// your view of the room alone.
+		if (ofire && !wasOtherFire && onIt && Flag("rsvg_offhand_pin", false))
 		{
 			PullPin();
 			level.VRHaptic(other, 0.7, 60.0);
@@ -474,6 +728,15 @@ class RS_VRGrenade : Weapon
 				Console.Printf("[RSVG] pin taken by the opposite hand");
 		}
 		wasOtherFire = ofire;
+
+		// IN RANGE, AND YOU ARE TOLD SO -- but only while the route is live. A cue
+		// for a gesture that is switched off is worse than no cue at all: it says
+		// "do it now" about something that will not answer.
+		bool offOn = Flag("rsvg_offhand_pin", false);
+		if (onIt && !wasReady && offOn)
+			level.VRHaptic(other, 0.35, 25.0);
+		wasReady   = onIt && offOn;
+		wantPrompt = onIt && offOn;
 
 		// ---- OR YOUR TEETH -------------------------------------------------
 		//
@@ -529,12 +792,41 @@ class RS_VRGrenade : Weapon
 			if (d > far) wasFaceNear = false;            // re-arm
 			if (d <= near) faceTic++; else faceTic = 0;
 
+			// THE DWELL, MADE VISIBLE AND FELT.
+			//
+			// A hold you cannot see the progress of is indistinguishable from one
+			// that is not working -- which is exactly how this read. The grenade
+			// goes amber the moment you are in range, and the taps quicken as the
+			// hold fills, so a gesture that is nearly there feels different from
+			// one that has not started.
+			if (faceTic > 0 && !wasFaceNear)
+			{
+				wantPrompt = true;
+				int step = max(2, 6 - (faceTic * 4) / max(hold, 1));
+				if ((faceTic % step) == 0)
+					level.VRHaptic(hand, 0.25 + 0.4 * faceTic / max(hold, 1), 18.0);
+			}
+
 			if (faceTic >= hold && !wasFaceNear)
 			{
 				wasFaceNear = true;
 				faceTic = 0;
 				PullPin();
-				level.VRHaptic(hand, 0.7, 60.0);
+
+				// A BANG, NOT A TAP. The taps while the hold fills are deliberately
+				// small so that the moment it COMPLETES has somewhere to go -- a
+				// confirmation the same size as the progress cue is not a
+				// confirmation. Full strength, and long enough to be a distinct event
+				// rather than the next tick in the ramp.
+				//
+				// BOTH HANDS, and the second one matters more than it looks: the hand
+				// that did not act has no other reason to feel anything, so a pulse
+				// there cannot be mistaken for the ramp continuing.
+				level.VRHaptic(hand,  1.0, 180.0);
+				level.VRHaptic(other, 0.5,  90.0);
+				A_StartSound("rsvg/pin", CHAN_BODY, CHANF_OVERLAP, 1.0);
+				pinFlash = 12;
+
 				if (Flag("rsvg_debug", false))
 					Console.Printf("[RSVG] pin taken with your teeth");
 			}
@@ -549,6 +841,7 @@ class RS_VRGrenade : Weapon
 
 	override void OnDestroy()
 	{
+		if (fuseLight) { fuseLight.Destroy(); fuseLight = null; }
 		DropProp();
 		Super.OnDestroy();
 	}
@@ -611,6 +904,15 @@ class RS_VRGrenadeThrown : Actor
 	int  mFuse;
 	bool mLive;      // the pin was out when it left your hand
 	int  lastTickTic;
+
+	// The same cadence the weapon uses, on the thrown grenade's own fuse.
+	bool ThrownRed() const
+	{
+		if (mFuse < 0) return false;
+		int period = clamp(3 + mFuse / 6, 3, 18);
+		return ((mFuse / period) & 1) == 0;
+	}
+
 	int  mAge;          // tics since it left your hand
 
 	// LATCHED, because Tick keeps running after the actor enters its Death state.
@@ -667,13 +969,42 @@ class RS_VRGrenadeThrown : Actor
 	{
 		Super.PostBeginPlay();
 		if (mFuse <= 0) mFuse = 105;
+
+		// IMPACT MODE, AND IT IS THREE FLAGS RATHER THAN A NEW CODE PATH.
+		//
+		// This is a Projectile, so the engine ALREADY sends it to its Death state
+		// on contact -- that is what made it bounce off walls correctly in the
+		// first place. The bounce flags are what intercept that contact and turn
+		// it into a rebound instead. Clear them and the existing Death state is
+		// reached by the route that was always there.
+		//
+		// Latched at spawn rather than read live, unlike every other setting here:
+		// a grenade that changed its mind about bouncing mid-flight because a
+		// slider moved would be genuinely unpredictable, and this is the one
+		// setting where that matters.
+		if (RS_VRGrenade.Flag("rsvg_impact", false))
+		{
+			bBounceOnFloors   = false;
+			bBounceOnWalls    = false;
+			bBounceOnCeilings = false;
+		}
 		lastTickTic = -1000;
 
 		// Start the tumble somewhere random so two thrown back to back are not
 		// in lockstep.
 		roll  = random(0, 359);
 		pitch = random(0, 359);
-		frame = mLive ? RS_VRGrenade.FR_LIVE : RS_VRGrenade.FR_SAFE;
+		// THE LIVE FRAME IS BACK. It had to be dropped when the correction was a
+		// MODELDEF Offset, because an Offset is only right for the frame it was
+		// measured from and the two differ by nearly seven map units vertically.
+		// A PivotOffset is a property of how the mesh was authored rather than of
+		// which frame is showing, so one value serves every frame and the lever
+		// can go missing again when the thing is live.
+		// The red pair again, so a live grenade in the air flashes exactly as it
+		// did in your hand and at the same rate.
+		bool red = mLive && RS_VRGrenade.Flag("rsvg_flash", true) && ThrownRed();
+		if (mLive) frame = red ? RS_VRGrenade.FR_LIVE_R : RS_VRGrenade.FR_LIVE;
+		else       frame = RS_VRGrenade.FR_SAFE;
 	}
 
 	override void Tick()
@@ -766,10 +1097,32 @@ class RS_VRGrenadeThrown : Actor
 
 			if ((old && near) || (grounded && Vel.Length() < 0.15))
 			{
-				Actor.Spawn("RSVG_Pickup", Pos, ALLOW_REPLACE);
+				Actor.Spawn("RSVG_Pickup", Pos, NO_REPLACE);
 				Destroy();
 			}
 			return;
+		}
+
+		// Same pulse as in the hand, driven by the same fuse, so a grenade in the
+		// air is telling you exactly what it told you a moment earlier.
+		//
+		// ONLY WHEN LIVE. A dud carries an mFuse it will never spend -- it is
+		// handed one at spawn so a cooked grenade arrives part-burned -- and
+		// PulseFuse keyed off that number alone would leave a dud stuck in one
+		// phase of the flash forever: a red stencil silhouette lying on the floor
+		// that never changes and never goes off.
+		RS_VRGrenade.PulseFuse(self, mLive ? mFuse : -1,
+			RS_VRGrenade.Flag("rsvg_flash", true));
+
+		// AND THE SAME LIGHT IT CARRIED IN YOUR HAND. A grenade that stops glowing
+		// the instant it leaves you is saying it has stopped counting, which is the
+		// opposite of true -- and in the dark it is the only thing showing you where
+		// the thing actually landed.
+		if (mLive && RS_VRGrenade.Flag("rsvg_light", false))
+		{
+			int lp = clamp(3 + mFuse / 6, 3, 18);
+			int lr = (((mFuse / lp) & 1) == 0) ? 96 : 24;
+			A_AttachLight('rsvg_fuse', DynamicLight.PointLight, Color(255, 48, 24), lr, lr);
 		}
 
 		if (mFuse > 0)
@@ -843,6 +1196,26 @@ class RS_VRGrenadeThrown : Actor
 // The drawn stand-in while it is in your hand. Two classes because MODELDEF
 // binds per class and a Follow flag names one specific controller; nothing
 // distinguishes them but that.
+// The light carrier. Nothing but somewhere for A_AttachLight to live -- in
+// psprite mode there is no actor at your hand to hang it on.
+class RSVG_FuseLight : Actor
+{
+	Default
+	{
+		+NOGRAVITY; +NOBLOCKMAP; +NOINTERACTION; +DONTSPLASH;
+		Radius 1; Height 1;
+	}
+	States
+	{
+	Spawn:
+		// TNT1 is right HERE and nowhere else in this file: a dynamic light is
+		// attached to the actor rather than drawn as part of it, so skipping the
+		// sprite costs nothing and avoids a stray billboard sitting at your palm.
+		TNT1 A -1;
+		Stop;
+	}
+}
+
 class RS_VRGrenadeHeldProp : Actor
 {
 	Default

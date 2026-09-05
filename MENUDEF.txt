@@ -4,69 +4,80 @@
 
 	StaticText ""
 	Option "Universal VR grenade", "rsvg_enable", "OnOff"
+	Option "Start with grenades",  "rsvg_start",  "OnOff"
 
 	StaticText " "
-	StaticText "ARMING", gold
-	StaticText "Off: pull the pin first (other hand, or your", gold
-	StaticText "face). Thrown with the pin in, it is a dud you", gold
-	StaticText "walk over to get back. On: throwing arms it.", gold
-	Option "Throwing arms it", "rsvg_autoarm", "OnOff"
+	StaticText "HOW TO USE IT", gold
+	StaticText "Hold the fire button of the hand HOLDING it.", gold
+	StaticText "Bring it to your face and hold to pull the pin", gold
+	StaticText "with your teeth. Release fire to throw.", gold
+
 	StaticText " "
-	StaticText "WHEN THE FUSE LIGHTS", gold
-	StaticText "On: the pin starts it. Holding a live one is", gold
-	StaticText "dangerous and you can cook it.", gold
+	StaticText "THE FUSE", gold
+	StaticText "On: the pin starts the timer, so you can cook", gold
+	StaticText "it -- and drop a live one on yourself.", gold
 	StaticText "Off: the lever starts it, like a real grenade.", gold
-	Option "Fuse starts on pin pull", "rsvg_cook", "OnOff"
-	Slider "Fuse seconds", "rsvg_fuse", 0.5, 10.0, 0.25, 2
+	Option "Timer starts on pin pull", "rsvg_cook", "OnOff"
+	Slider "Fuse seconds",             "rsvg_fuse", 0.5, 10.0, 0.25, 2
+
+	StaticText " "
+	StaticText "Flashes red, faster as it runs down.", gold
+	Option "Flash while lit",   "rsvg_flash", "OnOff"
+	StaticText "The glow lights the room. Off by default --", gold
+	StaticText "useful in the dark, overwhelming otherwise.", gold
+	Option "Also glow",         "rsvg_light", "OnOff"
 
 	StaticText " "
 	StaticText "PULLING THE PIN", gold
-	StaticText "Hold the fire button of the hand HOLDING it.", gold
-	StaticText "Then either bring your OPPOSITE hand to it,", gold
-	StaticText "empty, and press that hand's own fire -- or", gold
-	StaticText "bring the grenade to your face and use your", gold
-	StaticText "teeth. Release to throw.", gold
-	Slider "Hand must be within", "rsvg_pin_reach", 4.0, 60.0, 1.0, 1
-
-	StaticText " "
-	StaticText "Or bring it to your face and use your teeth.", gold
-	StaticText "Works with a gun in the other hand -- it costs", gold
-	StaticText "you your view of the room instead.", gold
-	Option "Pin pull at face", "rsvg_face", "OnOff"
-	Slider "  at this range",   "rsvg_face_near", 4.0,  20.0, 0.5, 1
+	Option "At your face",      "rsvg_face", "OnOff"
+	Slider "  reach",           "rsvg_face_near", 4.0,  24.0, 0.5, 1
 	Slider "  re-arm beyond",   "rsvg_face_far",  12.0, 50.0, 0.5, 1
-	Slider "  hold it for",     "rsvg_face_hold", 2.0, 40.0, 1.0, 0
+	Slider "  hold for (tics)", "rsvg_face_hold", 2.0,  40.0, 1.0, 0
+	StaticText "The hold is what stops a throwing motion", gold
+	StaticText "pulling its own pin on the way past.", gold
 
 	StaticText " "
-	StaticText " "
+	StaticText "The two-handed pull is finicky. Off by default.", gold
+	Option "With your other hand", "rsvg_offhand_pin", "OnOff"
+	Slider "  hand within",        "rsvg_pin_reach", 4.0, 60.0, 1.0, 1
 
-	StaticText "THE FLIGHT", gold
-	StaticText "Throw is a grenade-only trim on top of the", gold
-	StaticText "shared arm-strength slider in RS Hands.", gold
-	Slider "Throw trim",   "rsvg_throw",      0.25, 4.0, 0.05, 2
-	Slider "Toss arc",     "rsvg_lift",       0.0,  1.5, 0.05, 2
+	StaticText " "
+	StaticText "THE THROW", gold
+	StaticText "Trim is on top of the arm-strength slider", gold
+	StaticText "in RS Hands. Arc adds lift scaled to how", gold
+	StaticText "hard you actually threw.", gold
+	Slider "Throw trim",   "rsvg_throw", 0.25, 4.0, 0.05, 2
+	Slider "Toss arc",     "rsvg_lift",  0.0,  1.5, 0.05, 2
+
+	StaticText " "
+	StaticText "IN FLIGHT", gold
+	StaticText "Impact: the first thing it touches ends it.", gold
+	StaticText "Off: it bounces and the fuse decides.", gold
+	Option "Impact detonation", "rsvg_impact", "OnOff"
 	StaticText "Doom gravity is ~2.7x real. 0.37 is earth.", gold
-	Slider "Gravity",      "rsvg_gravity",    0.05, 1.0, 0.01, 2
-	Slider "Floor bounce", "rsvg_bounce",     0.0,  0.9, 0.05, 2
-	Slider "Wall bounce",  "rsvg_wallbounce", 0.0,  0.9, 0.05, 2
-	Slider "Ground drag",  "rsvg_friction",   0.30, 1.0, 0.02, 2
-	Slider "Tumble",       "rsvg_spin",       0.0,  12.0, 0.5, 1
+	Slider "Gravity",      "rsvg_gravity",    0.05, 1.0,  0.01, 2
+	Slider "Floor bounce", "rsvg_bounce",     0.0,  0.9,  0.05, 2
+	Slider "Wall bounce",  "rsvg_wallbounce", 0.0,  0.9,  0.05, 2
+	Slider "Ground drag",  "rsvg_friction",   0.30, 1.0,  0.02, 2
+	Slider "Tumble",       "rsvg_spin",       0.0,  12.0, 0.5,  1
 
-	StaticText "A dud you walk up to settles and becomes", gold
-	StaticText "collectable. Delay is tics, range map units.", gold
+	StaticText " "
+	StaticText "A dud you walk up to settles and can be", gold
+	StaticText "picked back up. Delay is tics, range units.", gold
 	Slider "Dud delay",    "rsvg_dud_delay",  0.0,  140.0, 5.0, 0
 	Slider "Dud range",    "rsvg_dud_range",  16.0, 320.0, 8.0, 0
 
 	StaticText " "
-	StaticText "World actor: occluded by walls, lit by the", gold
-	StaticText "room. Psprite: like a gun, draws over the", gold
-	StaticText "world. Gestures are identical either way.", gold
+	StaticText "APPEARANCE", gold
 	Option "Draw as psprite", "rsvg_psprite", "OnOff"
-	Submenu "Seat it in the hand...", "RSVG_Place"
-	Submenu "Seat the psprite...",   "RSVG_PlacePS"
+	Submenu "Seat the world model...", "RSVG_Place"
+	Submenu "Seat the psprite...",     "RSVG_PlacePS"
 
+	StaticText " "
 	Option "Log pin and fuse", "rsvg_debug", "OnOff"
+	SafeCommand "Reset everything", "resetcvar rsvg_cook rsvg_fuse rsvg_flash rsvg_light rsvg_face rsvg_face_near rsvg_face_far rsvg_face_hold rsvg_offhand_pin rsvg_pin_reach rsvg_throw rsvg_lift rsvg_impact rsvg_gravity rsvg_bounce rsvg_wallbounce rsvg_friction rsvg_spin rsvg_dud_delay rsvg_dud_range"
 }
+
 
 AddOptionMenu "OptionsMenu"
 {

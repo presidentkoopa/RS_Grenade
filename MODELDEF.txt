@@ -13,8 +13,45 @@ Model RS_VRGrenadeThrown
 	Path "models/grenade"
 	Model 0 "nade.md3"
 	Skin 0 "nade.png"
+
+	// A SECOND COPY OF THE MESH, WEARING A RED SKIN.
+	//
+	// This is how the fuse is shown, and it is a skin swap rather than anything
+	// cleverer because the clever options do not work here. A MODELDEF
+	// Translation is a palette remap and this mesh is skinned with a truecolor
+	// PNG, so a translation does nothing at all. RenderStyle Stencil works, but
+	// only on the world path: RenderHUDModel passes playermo->RenderStyle
+	// (models.cpp:1408) -- the PLAYER's -- so stencilling a psprite-drawn model
+	// would tint the whole player instead of the grenade.
+	//
+	// A second model index with its own skin is immune to all of that. It is the
+	// same geometry addressed by a different FrameIndex, so switching to it costs
+	// one frame number and works identically on both draw paths.
+	Model 1 "nade.md3"
+	Skin 1 "nade_red.png"
 	Scale 0.3 0.3 0.3
-	Offset 0.0 0.0 0.0
+	// PIVOTOFFSET, BECAUSE THE MESH IS NOT CENTRED ON ITS OWN ORIGIN.
+	//
+	// Measured out of the file at frame 0 and scaled by the 0.3 below: the body
+	// spans -8.60 to -3.85 map units vertically about the model origin, and sits
+	// 5.85 units off to one side of it. A Doom actor rests with its origin ON the
+	// floor, so drawn raw the grenade was 8.6 units underground and a quarter of a
+	// metre sideways of where it actually was.
+	//
+	// PIVOTOFFSET AND NOT OFFSET, and the difference is the whole reason the
+	// engine gained the field. Offset is applied AFTER the rotations, so it moves
+	// the model without moving the point the model turns about -- it would have
+	// put the grenade on the floor and left it ORBITING its old origin every time
+	// it tumbled. PivotOffset is subtracted BEFORE them, which is the ordinary
+	// v' = R * (v - p): the mesh is moved onto its intended centre of rotation
+	// first, then spun about it.
+	//
+	// So one number fixes both faults at once. It sits on the floor at rest AND
+	// spins in place in flight.
+	//
+	// Z is the mesh's own vertical: raising by 8.597 brings its BASE to the
+	// origin, which is where a thing lying on a floor should meet it.
+	PivotOffset 5.848 0.0 -8.597
 
 	// FLAGS BEFORE THE FrameIndex LINES. Each FrameIndex pushes a COPY of the
 	// in-progress frame carrying whatever flags are set at that moment, so a
@@ -24,37 +61,42 @@ Model RS_VRGrenadeThrown
 	USEACTORROLL
 
 
-	// THE MESH IS THE STATE MACHINE, and this mapping is why the model was worth
-	// keeping. Measured out of the file: the pin ring and the safety lever are
-	// separate surfaces, animated independently across 27 frames.
+	// THE FRAME TABLE, AND THE ORDER OF THESE LINES IS LOAD-BEARING.
 	//
-	//   0-7    ring present, lever present    safe
-	//   8-9    ring shrinking to nothing      the pin actually coming out
-	//   10-15  ring gone, lever still on      pin pulled, lever held by your grip
-	//   16-26  both gone                      lever flown, in flight
+	// A FrameIndex line sets the frame for the ONE model index it names and
+	// leaves every other index at whatever the previous line left it -- then
+	// pushes a COPY of that accumulated state. So writing the plain frames and
+	// the red frames as two independent groups does not give you two variants:
+	// it gives you entries where BOTH models are set, and both meshes draw, one
+	// inside the other. The red one wins because it is drawn second, which is
+	// why the grenade came out red permanently rather than flashing.
 	//
+	// The carry-over is also the fix. A model index parked at -1 is not drawn, so
+	// setting the unwanted one to -1 FIRST makes every line after it clean until
+	// something changes it back.
+	//
+	// H and I are scratch: their only job is to carry that -1 into the lines
+	// below them. They are never displayed -- nothing sets frame H or I -- and
+	// the sprite lookup only validates the four-letter name, not the letter, so
+	// they cost two unused table entries and nothing else.
+
+	FrameIndex JGRN H 1 -1    // from here down: the red mesh is off
+	FrameIndex JGRN A 0 0     // safe
+	FrameIndex JGRN G 0 16    // live -- lever flown
+
+	FrameIndex JGRN I 0 -1    // from here down: the plain mesh is off
+	FrameIndex JGRN E 1 0     // safe, red
+	FrameIndex JGRN F 1 16    // live, red
 	// So every state has a pose that already exists and nothing is faked. Eight
 	// sprite letters is all JGRN has, which is exactly enough.
-	// ONE POSE IN THE HAND, AND IT IS FRAME 0.
-	//
-	// NO FRAME IN THIS MESH CAN SHOW THE PIN OUT WITHOUT MOVING THE GRENADE.
-	// Measured: the body centroid is at z=-21.07 on frame 0 and z=-1.28 on every
-	// frame from 2 to 10, because 0 and 1 are the tail of Brutal Doom's DRAW
 	// animation, which swings the whole grenade up into view. So "safe" on 0 and
 	// "pin out" on 10 moves the body twenty units -- the dancing.
-	//
 	// Moving BOTH poses onto the 2-10 group fixes the dance and moves where the
 	// grenade sits, which throws away seating that was found by hand in a
-	// headset. That is the worse trade. So: one pose, frame 0, never changed.
-	//
 	// The pin coming out is reported by sound and haptics instead. If it needs to
-	// be visible, the answer is a mesh whose ring can leave without the body
-	// moving -- not a frame choice, because this mesh does not contain one.
-	FrameIndex JGRN A 0 0     // the ONLY pose used in hand
-	FrameIndex JGRN B 0 8     // ring going   -- same body
-	FrameIndex JGRN C 0 9     // ring nearly  -- same body
-	FrameIndex JGRN D 0 10    // ring gone    -- same body
-	FrameIndex JGRN G 0 16    // lever flown -- in flight only
+
+	// and nothing else -- no render style, no colour maths, no per-path special
+	// case. E mirrors A and F mirrors G.
 }
 
 
@@ -81,6 +123,22 @@ Model RS_VRGrenadeHeldMain
 	Path "models/grenade"
 	Model 0 "nade.md3"
 	Skin 0 "nade.png"
+
+	// A SECOND COPY OF THE MESH, WEARING A RED SKIN.
+	//
+	// This is how the fuse is shown, and it is a skin swap rather than anything
+	// cleverer because the clever options do not work here. A MODELDEF
+	// Translation is a palette remap and this mesh is skinned with a truecolor
+	// PNG, so a translation does nothing at all. RenderStyle Stencil works, but
+	// only on the world path: RenderHUDModel passes playermo->RenderStyle
+	// (models.cpp:1408) -- the PLAYER's -- so stencilling a psprite-drawn model
+	// would tint the whole player instead of the grenade.
+	//
+	// A second model index with its own skin is immune to all of that. It is the
+	// same geometry addressed by a different FrameIndex, so switching to it costs
+	// one frame number and works identically on both draw paths.
+	Model 1 "nade.md3"
+	Skin 1 "nade_red.png"
 	PlacementCVars rsvg_hm
 	Scale 0.005642 0.005642 0.005642
 	Offset 0.0 0.0 0.0
@@ -91,37 +149,42 @@ Model RS_VRGrenadeHeldMain
 	NOAUTOREVERSE
 	FollowMainHand
 
-	// THE MESH IS THE STATE MACHINE, and this mapping is why the model was worth
-	// keeping. Measured out of the file: the pin ring and the safety lever are
-	// separate surfaces, animated independently across 27 frames.
+	// THE FRAME TABLE, AND THE ORDER OF THESE LINES IS LOAD-BEARING.
 	//
-	//   0-7    ring present, lever present    safe
-	//   8-9    ring shrinking to nothing      the pin actually coming out
-	//   10-15  ring gone, lever still on      pin pulled, lever held by your grip
-	//   16-26  both gone                      lever flown, in flight
+	// A FrameIndex line sets the frame for the ONE model index it names and
+	// leaves every other index at whatever the previous line left it -- then
+	// pushes a COPY of that accumulated state. So writing the plain frames and
+	// the red frames as two independent groups does not give you two variants:
+	// it gives you entries where BOTH models are set, and both meshes draw, one
+	// inside the other. The red one wins because it is drawn second, which is
+	// why the grenade came out red permanently rather than flashing.
 	//
+	// The carry-over is also the fix. A model index parked at -1 is not drawn, so
+	// setting the unwanted one to -1 FIRST makes every line after it clean until
+	// something changes it back.
+	//
+	// H and I are scratch: their only job is to carry that -1 into the lines
+	// below them. They are never displayed -- nothing sets frame H or I -- and
+	// the sprite lookup only validates the four-letter name, not the letter, so
+	// they cost two unused table entries and nothing else.
+
+	FrameIndex JGRN H 1 -1    // from here down: the red mesh is off
+	FrameIndex JGRN A 0 0     // safe
+	FrameIndex JGRN G 0 16    // live -- lever flown
+
+	FrameIndex JGRN I 0 -1    // from here down: the plain mesh is off
+	FrameIndex JGRN E 1 0     // safe, red
+	FrameIndex JGRN F 1 16    // live, red
 	// So every state has a pose that already exists and nothing is faked. Eight
 	// sprite letters is all JGRN has, which is exactly enough.
-	// ONE POSE IN THE HAND, AND IT IS FRAME 0.
-	//
-	// NO FRAME IN THIS MESH CAN SHOW THE PIN OUT WITHOUT MOVING THE GRENADE.
-	// Measured: the body centroid is at z=-21.07 on frame 0 and z=-1.28 on every
-	// frame from 2 to 10, because 0 and 1 are the tail of Brutal Doom's DRAW
 	// animation, which swings the whole grenade up into view. So "safe" on 0 and
 	// "pin out" on 10 moves the body twenty units -- the dancing.
-	//
 	// Moving BOTH poses onto the 2-10 group fixes the dance and moves where the
 	// grenade sits, which throws away seating that was found by hand in a
-	// headset. That is the worse trade. So: one pose, frame 0, never changed.
-	//
 	// The pin coming out is reported by sound and haptics instead. If it needs to
-	// be visible, the answer is a mesh whose ring can leave without the body
-	// moving -- not a frame choice, because this mesh does not contain one.
-	FrameIndex JGRN A 0 0     // the ONLY pose used in hand
-	FrameIndex JGRN B 0 8     // ring going   -- same body
-	FrameIndex JGRN C 0 9     // ring nearly  -- same body
-	FrameIndex JGRN D 0 10    // ring gone    -- same body
-	FrameIndex JGRN G 0 16    // lever flown -- in flight only
+
+	// and nothing else -- no render style, no colour maths, no per-path special
+	// case. E mirrors A and F mirrors G.
 }
 
 Model RS_VRGrenadeHeldOff
@@ -129,6 +192,22 @@ Model RS_VRGrenadeHeldOff
 	Path "models/grenade"
 	Model 0 "nade.md3"
 	Skin 0 "nade.png"
+
+	// A SECOND COPY OF THE MESH, WEARING A RED SKIN.
+	//
+	// This is how the fuse is shown, and it is a skin swap rather than anything
+	// cleverer because the clever options do not work here. A MODELDEF
+	// Translation is a palette remap and this mesh is skinned with a truecolor
+	// PNG, so a translation does nothing at all. RenderStyle Stencil works, but
+	// only on the world path: RenderHUDModel passes playermo->RenderStyle
+	// (models.cpp:1408) -- the PLAYER's -- so stencilling a psprite-drawn model
+	// would tint the whole player instead of the grenade.
+	//
+	// A second model index with its own skin is immune to all of that. It is the
+	// same geometry addressed by a different FrameIndex, so switching to it costs
+	// one frame number and works identically on both draw paths.
+	Model 1 "nade.md3"
+	Skin 1 "nade_red.png"
 	PlacementCVars rsvg_ho
 	Scale 0.005642 0.005642 0.005642
 	Offset 0.0 0.0 0.0
@@ -139,37 +218,42 @@ Model RS_VRGrenadeHeldOff
 	NOAUTOREVERSE
 	FollowOffHand
 
-	// THE MESH IS THE STATE MACHINE, and this mapping is why the model was worth
-	// keeping. Measured out of the file: the pin ring and the safety lever are
-	// separate surfaces, animated independently across 27 frames.
+	// THE FRAME TABLE, AND THE ORDER OF THESE LINES IS LOAD-BEARING.
 	//
-	//   0-7    ring present, lever present    safe
-	//   8-9    ring shrinking to nothing      the pin actually coming out
-	//   10-15  ring gone, lever still on      pin pulled, lever held by your grip
-	//   16-26  both gone                      lever flown, in flight
+	// A FrameIndex line sets the frame for the ONE model index it names and
+	// leaves every other index at whatever the previous line left it -- then
+	// pushes a COPY of that accumulated state. So writing the plain frames and
+	// the red frames as two independent groups does not give you two variants:
+	// it gives you entries where BOTH models are set, and both meshes draw, one
+	// inside the other. The red one wins because it is drawn second, which is
+	// why the grenade came out red permanently rather than flashing.
 	//
+	// The carry-over is also the fix. A model index parked at -1 is not drawn, so
+	// setting the unwanted one to -1 FIRST makes every line after it clean until
+	// something changes it back.
+	//
+	// H and I are scratch: their only job is to carry that -1 into the lines
+	// below them. They are never displayed -- nothing sets frame H or I -- and
+	// the sprite lookup only validates the four-letter name, not the letter, so
+	// they cost two unused table entries and nothing else.
+
+	FrameIndex JGRN H 1 -1    // from here down: the red mesh is off
+	FrameIndex JGRN A 0 0     // safe
+	FrameIndex JGRN G 0 16    // live -- lever flown
+
+	FrameIndex JGRN I 0 -1    // from here down: the plain mesh is off
+	FrameIndex JGRN E 1 0     // safe, red
+	FrameIndex JGRN F 1 16    // live, red
 	// So every state has a pose that already exists and nothing is faked. Eight
 	// sprite letters is all JGRN has, which is exactly enough.
-	// ONE POSE IN THE HAND, AND IT IS FRAME 0.
-	//
-	// NO FRAME IN THIS MESH CAN SHOW THE PIN OUT WITHOUT MOVING THE GRENADE.
-	// Measured: the body centroid is at z=-21.07 on frame 0 and z=-1.28 on every
-	// frame from 2 to 10, because 0 and 1 are the tail of Brutal Doom's DRAW
 	// animation, which swings the whole grenade up into view. So "safe" on 0 and
 	// "pin out" on 10 moves the body twenty units -- the dancing.
-	//
 	// Moving BOTH poses onto the 2-10 group fixes the dance and moves where the
 	// grenade sits, which throws away seating that was found by hand in a
-	// headset. That is the worse trade. So: one pose, frame 0, never changed.
-	//
 	// The pin coming out is reported by sound and haptics instead. If it needs to
-	// be visible, the answer is a mesh whose ring can leave without the body
-	// moving -- not a frame choice, because this mesh does not contain one.
-	FrameIndex JGRN A 0 0     // the ONLY pose used in hand
-	FrameIndex JGRN B 0 8     // ring going   -- same body
-	FrameIndex JGRN C 0 9     // ring nearly  -- same body
-	FrameIndex JGRN D 0 10    // ring gone    -- same body
-	FrameIndex JGRN G 0 16    // lever flown -- in flight only
+
+	// and nothing else -- no render style, no colour maths, no per-path special
+	// case. E mirrors A and F mirrors G.
 }
 
 
@@ -201,6 +285,22 @@ Model RS_VRGrenade
 	Path "models/grenade"
 	Model 0 "nade.md3"
 	Skin 0 "nade.png"
+
+	// A SECOND COPY OF THE MESH, WEARING A RED SKIN.
+	//
+	// This is how the fuse is shown, and it is a skin swap rather than anything
+	// cleverer because the clever options do not work here. A MODELDEF
+	// Translation is a palette remap and this mesh is skinned with a truecolor
+	// PNG, so a translation does nothing at all. RenderStyle Stencil works, but
+	// only on the world path: RenderHUDModel passes playermo->RenderStyle
+	// (models.cpp:1408) -- the PLAYER's -- so stencilling a psprite-drawn model
+	// would tint the whole player instead of the grenade.
+	//
+	// A second model index with its own skin is immune to all of that. It is the
+	// same geometry addressed by a different FrameIndex, so switching to it costs
+	// one frame number and works identically on both draw paths.
+	Model 1 "nade.md3"
+	Skin 1 "nade_red.png"
 	PlacementCVars rsvg_ps
 	Scale 0.5643 0.5643 0.5643
 	Offset 0.0 0.0 0.0
@@ -210,7 +310,37 @@ Model RS_VRGrenade
 	PitchOffset 90.0
 	RollOffset 0.0
 	AngleOffset 0.0
-	FrameIndex JGRN A 0 0
+	// THE FRAME TABLE, AND THE ORDER OF THESE LINES IS LOAD-BEARING.
+	//
+	// A FrameIndex line sets the frame for the ONE model index it names and
+	// leaves every other index at whatever the previous line left it -- then
+	// pushes a COPY of that accumulated state. So writing the plain frames and
+	// the red frames as two independent groups does not give you two variants:
+	// it gives you entries where BOTH models are set, and both meshes draw, one
+	// inside the other. The red one wins because it is drawn second, which is
+	// why the grenade came out red permanently rather than flashing.
+	//
+	// The carry-over is also the fix. A model index parked at -1 is not drawn, so
+	// setting the unwanted one to -1 FIRST makes every line after it clean until
+	// something changes it back.
+	//
+	// H and I are scratch: their only job is to carry that -1 into the lines
+	// below them. They are never displayed -- nothing sets frame H or I -- and
+	// the sprite lookup only validates the four-letter name, not the letter, so
+	// they cost two unused table entries and nothing else.
+
+	FrameIndex JGRN H 1 -1    // from here down: the red mesh is off
+	FrameIndex JGRN A 0 0     // safe
+	FrameIndex JGRN G 0 16    // live -- lever flown
+
+	FrameIndex JGRN I 0 -1    // from here down: the plain mesh is off
+	FrameIndex JGRN E 1 0     // safe, red
+	FrameIndex JGRN F 1 16    // live, red
+
+	// was the only one of the five without them -- which would have meant the
+	// fuse flash worked everywhere except the mode actually in use.
+	// F is unreachable from this block in practice (a psprite grenade is never
+	// the live in-flight one) and is listed anyway, so the five blocks carry the
 }
 
 // The dud lying on the floor. Same mesh and same world scale as the thrown one.
@@ -219,8 +349,45 @@ Model RSVG_Pickup
 	Path "models/grenade"
 	Model 0 "nade.md3"
 	Skin 0 "nade.png"
+
+	// A SECOND COPY OF THE MESH, WEARING A RED SKIN.
+	//
+	// This is how the fuse is shown, and it is a skin swap rather than anything
+	// cleverer because the clever options do not work here. A MODELDEF
+	// Translation is a palette remap and this mesh is skinned with a truecolor
+	// PNG, so a translation does nothing at all. RenderStyle Stencil works, but
+	// only on the world path: RenderHUDModel passes playermo->RenderStyle
+	// (models.cpp:1408) -- the PLAYER's -- so stencilling a psprite-drawn model
+	// would tint the whole player instead of the grenade.
+	//
+	// A second model index with its own skin is immune to all of that. It is the
+	// same geometry addressed by a different FrameIndex, so switching to it costs
+	// one frame number and works identically on both draw paths.
+	Model 1 "nade.md3"
+	Skin 1 "nade_red.png"
 	Scale 0.3 0.3 0.3
-	Offset 0.0 0.0 0.0
+	// PIVOTOFFSET, BECAUSE THE MESH IS NOT CENTRED ON ITS OWN ORIGIN.
+	//
+	// Measured out of the file at frame 0 and scaled by the 0.3 below: the body
+	// spans -8.60 to -3.85 map units vertically about the model origin, and sits
+	// 5.85 units off to one side of it. A Doom actor rests with its origin ON the
+	// floor, so drawn raw the grenade was 8.6 units underground and a quarter of a
+	// metre sideways of where it actually was.
+	//
+	// PIVOTOFFSET AND NOT OFFSET, and the difference is the whole reason the
+	// engine gained the field. Offset is applied AFTER the rotations, so it moves
+	// the model without moving the point the model turns about -- it would have
+	// put the grenade on the floor and left it ORBITING its old origin every time
+	// it tumbled. PivotOffset is subtracted BEFORE them, which is the ordinary
+	// v' = R * (v - p): the mesh is moved onto its intended centre of rotation
+	// first, then spun about it.
+	//
+	// So one number fixes both faults at once. It sits on the floor at rest AND
+	// spins in place in flight.
+	//
+	// Z is the mesh's own vertical: raising by 8.597 brings its BASE to the
+	// origin, which is where a thing lying on a floor should meet it.
+	PivotOffset 5.848 0.0 -8.597
 
 	// FLAGS BEFORE THE FrameIndex LINES. Each FrameIndex pushes a COPY of the
 	// in-progress frame carrying whatever flags are set at that moment, so a
@@ -230,35 +397,40 @@ Model RSVG_Pickup
 	USEACTORROLL
 
 
-	// THE MESH IS THE STATE MACHINE, and this mapping is why the model was worth
-	// keeping. Measured out of the file: the pin ring and the safety lever are
-	// separate surfaces, animated independently across 27 frames.
+	// THE FRAME TABLE, AND THE ORDER OF THESE LINES IS LOAD-BEARING.
 	//
-	//   0-7    ring present, lever present    safe
-	//   8-9    ring shrinking to nothing      the pin actually coming out
-	//   10-15  ring gone, lever still on      pin pulled, lever held by your grip
-	//   16-26  both gone                      lever flown, in flight
+	// A FrameIndex line sets the frame for the ONE model index it names and
+	// leaves every other index at whatever the previous line left it -- then
+	// pushes a COPY of that accumulated state. So writing the plain frames and
+	// the red frames as two independent groups does not give you two variants:
+	// it gives you entries where BOTH models are set, and both meshes draw, one
+	// inside the other. The red one wins because it is drawn second, which is
+	// why the grenade came out red permanently rather than flashing.
 	//
+	// The carry-over is also the fix. A model index parked at -1 is not drawn, so
+	// setting the unwanted one to -1 FIRST makes every line after it clean until
+	// something changes it back.
+	//
+	// H and I are scratch: their only job is to carry that -1 into the lines
+	// below them. They are never displayed -- nothing sets frame H or I -- and
+	// the sprite lookup only validates the four-letter name, not the letter, so
+	// they cost two unused table entries and nothing else.
+
+	FrameIndex JGRN H 1 -1    // from here down: the red mesh is off
+	FrameIndex JGRN A 0 0     // safe
+	FrameIndex JGRN G 0 16    // live -- lever flown
+
+	FrameIndex JGRN I 0 -1    // from here down: the plain mesh is off
+	FrameIndex JGRN E 1 0     // safe, red
+	FrameIndex JGRN F 1 16    // live, red
 	// So every state has a pose that already exists and nothing is faked. Eight
 	// sprite letters is all JGRN has, which is exactly enough.
-	// ONE POSE IN THE HAND, AND IT IS FRAME 0.
-	//
-	// NO FRAME IN THIS MESH CAN SHOW THE PIN OUT WITHOUT MOVING THE GRENADE.
-	// Measured: the body centroid is at z=-21.07 on frame 0 and z=-1.28 on every
-	// frame from 2 to 10, because 0 and 1 are the tail of Brutal Doom's DRAW
 	// animation, which swings the whole grenade up into view. So "safe" on 0 and
 	// "pin out" on 10 moves the body twenty units -- the dancing.
-	//
 	// Moving BOTH poses onto the 2-10 group fixes the dance and moves where the
 	// grenade sits, which throws away seating that was found by hand in a
-	// headset. That is the worse trade. So: one pose, frame 0, never changed.
-	//
 	// The pin coming out is reported by sound and haptics instead. If it needs to
-	// be visible, the answer is a mesh whose ring can leave without the body
-	// moving -- not a frame choice, because this mesh does not contain one.
-	FrameIndex JGRN A 0 0     // the ONLY pose used in hand
-	FrameIndex JGRN B 0 8     // ring going   -- same body
-	FrameIndex JGRN C 0 9     // ring nearly  -- same body
-	FrameIndex JGRN D 0 10    // ring gone    -- same body
-	FrameIndex JGRN G 0 16    // lever flown -- in flight only
+
+	// and nothing else -- no render style, no colour maths, no per-path special
+	// case. E mirrors A and F mirrors G.
 }

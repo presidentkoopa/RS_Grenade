@@ -26,7 +26,7 @@ user float rsvg_face_far  = 24.0;
 user bool  rsvg_face = true;
 
 // Ships OFF, matching every other subsystem trace in this family.
-user bool  rsvg_debug = false;
+user bool  rsvg_debug = true;
 
 user bool rsvg_start = true;
 
@@ -133,3 +133,30 @@ user float rsvg_face_hold = 12.0;
 // in is a dud that settles and turns back into a pickup. On: throwing is the
 // arming; every throw is live and the pin is decorative.
 user bool rsvg_autoarm = false;
+
+// THE FUSE, SEEN. Red / neutral / red on the grenade itself, accelerating as
+// it burns down. Same information the ticking carries, in the channel you cannot
+// lose in a firefight.
+user bool rsvg_flash = true;
+
+// THE OPPOSITE-HAND PIN PULL. Off by default: two hands and a small object at
+// arm's length is a finicky gesture, and there is no reach value that is both
+// reliable to hit and tight enough not to misfire. The face route needs one hand
+// and a deliberate hold, and does the same job better.
+user bool rsvg_offhand_pin = false;
+
+// The room-lighting glow. OFF: it worked too well -- bright enough to read on
+// the grenade also meant lighting the whole room through it, which with a
+// darkness mod is a flashbang in your hand every three seconds. The red skin
+// says the same thing and stays on the object it describes. Kept because in a
+// genuinely black room it is the only thing that shows where a thrown one went.
+user bool rsvg_light = false;
+
+// IMPACT OR TIMER.
+//   false -- it bounces and the fuse decides. Bank one off a wall, roll it
+//            round a corner, cook one and have it go off in the air.
+//   true  -- the first thing it touches ends it. Nothing comes back at you
+//            off a doorframe, and cooking stops mattering.
+// Read at spawn, not live: a grenade that changed its mind mid-flight
+// because a slider moved would be genuinely unpredictable.
+user bool rsvg_impact = false;
