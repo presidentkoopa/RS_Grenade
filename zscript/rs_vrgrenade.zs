@@ -167,33 +167,37 @@ class RS_VRGrenade : Weapon
 		return (hand == 0) ? pmo.AttackPos : pmo.OffhandPos;
 	}
 
-	// THE THROW, MEASURED HERE.
+	// THE THROW, MEASURED HERE -- THE FALLBACK PATH ONLY.
 	//
-	// The same shape as RS_Throw: the PEAK of the hand's motion over roughly the
-	// last 180ms, not its speed at the instant you let go. By the time your
-	// fingers open your arm is already slowing, and a throw built on that reads
-	// limp no matter how hard it felt -- no amount of scaling fixes it, because
-	// the number being scaled is the deceleration.
+	// RS_ThrowService answers this first (see ThrowIt below); this only runs
+	// when nothing does, i.e. this pk3 on its own with RS_WorldHands absent.
 	//
-	// Measured RELATIVE to the pawn and the pawn's own velocity added back at the
-	// end, so walking or riding a lift is not mistaken for a throw, and so a
-	// grenade thrown while sprinting is not left behind by exactly your own speed.
+	// NATIVE VELOCITY NOW, not a position difference. AttackVel/OffhandVel
+	// (actor.zs) are OpenXR's own controller velocity -- already the peak
+	// measurement problem this used to work around by hand: the runtime
+	// reports true instantaneous hand speed, not a same-tic average smeared by
+	// differencing, so there is no artificial lag stacked on top of the real
+	// deceleration a swinging arm always has. See RS_Swing in RS_WorldHands,
+	// which made the identical change to the shared path this file prefers.
+	//
+	// NOT relative to the pawn -- and that is not an oversight, it is the
+	// opposite of the old code. A world-space POSITION difference bakes in
+	// however fast you were walking, which is why the old version subtracted
+	// pmo.Vel back out. A native XR velocity reading was never in world space
+	// to begin with; it is the controller's motion through the play area,
+	// which walking a simulated body through the level does not touch at all.
+	// SwingPeak() below still adds pmo.Vel back in, once, for the same reason
+	// RS_Throw does: the THROWN OBJECT's world velocity is hand motion plus
+	// player motion, however the hand motion was measured.
 	const SWING_SAMPLES = 7;          // ~180ms at 35 tics
 	private Vector3 swing[SWING_SAMPLES];
-	private Vector3 lastPalm;
 	private int  swingIdx;
-	private bool swingPrimed;
 
 	private void TrackSwing(PlayerPawn pmo, int hand)
 	{
-		Vector3 now = Palm(pmo, hand);
-		if (!swingPrimed) { lastPalm = now; swingPrimed = true; return; }
-
-		// Per-tic delta minus the pawn's own movement -- the hand's motion in the
-		// player's frame, which is what a throw actually is.
-		swing[swingIdx] = (now - lastPalm) - pmo.Vel;
+		Vector3 native = (hand == 0) ? pmo.AttackVel : pmo.OffhandVel;
+		swing[swingIdx] = native / TICRATE;
 		swingIdx = (swingIdx + 1) % SWING_SAMPLES;
-		lastPalm = now;
 	}
 
 	private Vector3 SwingPeak(PlayerPawn pmo) const
@@ -492,25 +496,68 @@ class RS_VRGrenade : Weapon
 		// ~180ms rather than its speed at the instant you let go. Your arm is
 		// already slowing by then, and a throw built on that reads limp however
 		// hard it felt.
-		Vector3 v = SwingPeak(pmo) * Num("rsvg_throw", 1.0);
+		// ---- THE SHARED THROW, IF IT IS THERE ------------------------------
+		//
+		// RS_WorldHands measures throws for everything that leaves a hand, and
+		// measures them better than the copy below: heading from where your hand
+		// was going AT RELEASE rather than at its fastest instant, a window so an
+		// older flick cannot become this throw, and the arc -- which this weapon
+		// invented as rsvg_lift and which is now everyone's.
+		//
+		// BY SERVICE, NEVER BY CLASS. This file removed its RS_Throw reference
+		// because that coupling broke the whole game three times across three
+		// folder layouts: a ZScript class reference to a pk3 that is absent, or
+		// that loads later, is fatal AND global. A service has no such coupling
+		// -- ask, and if nothing answers fall through to the local copy, which
+		// is what running this pk3 on its own does.
+		Vector3 v = (0, 0, 0);
+		bool shared = false;
 
-		// THE ARC.
-		//
-		// A grenade is TOSSED, not bowled. Tracked arm motion is mostly horizontal
-		// -- you swing forward far more than you swing up -- so a throw taken
-		// straight from the controller leaves flat and gravity turns it into a
-		// descending line rather than an arc.
-		//
-		// Lift adds a fraction of the HORIZONTAL speed as upward velocity, so it
-		// scales with how hard you actually threw: a gentle underarm still lobs
-		// gently, a hard throw still goes flat and fast. Adding a fixed amount
-		// instead would make every throw arc the same regardless of effort, which
-		// is the thing that reads as scripted.
-		double lift = Num("rsvg_lift", 0.35);
-		if (lift > 0)
+		// THE WRIST'S OWN SPIN, IF THE SERVICE HAS IT. This grenade has always
+		// tumbled at a fixed lazy rate (rsvg_spin/its 0.43 pitch ratio) no
+		// matter how it left your hand -- every throw spun identically, gentle
+		// toss or hard flick alike. RS_ShieldSaw already reads this same
+		// request for its own spin; the grenade never had a reason to and now
+		// does. (yaw, pitch, roll), degrees per tic -- see RS_Throw.SpinFor.
+		// Only yaw is left unused below: a roughly round grenade does not read
+		// as spinning about its own vertical axis the way roll and pitch do.
+		Vector3 spin = (0, 0, 0);
+
+		ServiceIterator sit = ServiceIterator.Find("RS_ThrowService");
+		Service sv;
+		while (sv = sit.Next())
 		{
-			double flat = (v.x, v.y, 0).Length();
-			v.z += flat * lift;
+			if (sv.GetInt("throw.hello", "", 0, 0, null, 'None') != 1) continue;
+			// Thousandths: a Service returns an int, and a throw needs finer
+			// resolution than whole units per tic.
+			v = ( sv.GetInt("throw.vel.x", "", hand, 0, pmo, 'RS_Grenade') / 1000.0,
+			      sv.GetInt("throw.vel.y", "", hand, 0, pmo, 'RS_Grenade') / 1000.0,
+			      sv.GetInt("throw.vel.z", "", hand, 0, pmo, 'RS_Grenade') / 1000.0 );
+			spin = ( sv.GetInt("throw.spin.yaw",   "", hand, 0, pmo, 'RS_Grenade') / 1000.0,
+			         sv.GetInt("throw.spin.pitch", "", hand, 0, pmo, 'RS_Grenade') / 1000.0,
+			         sv.GetInt("throw.spin.roll",  "", hand, 0, pmo, 'RS_Grenade') / 1000.0 );
+			shared = true;
+			break;
+		}
+
+		if (shared)
+		{
+			// Already arced, already carrying the player's own velocity. What is
+			// left is this weapon's WEIGHT -- a grenade is heavier than a
+			// magazine and lighter than a barrel, which is a fact about the
+			// object rather than a setting about the player.
+			v *= Num("rsvg_throw", 1.0);
+		}
+		else
+		{
+			// LOCAL FALLBACK, unchanged: peak of the window, and its own lift.
+			v = SwingPeak(pmo) * Num("rsvg_throw", 1.0);
+			double lift = Num("rsvg_lift", 0.35);
+			if (lift > 0)
+			{
+				double flat = (v.x, v.y, 0).Length();
+				v.z += flat * lift;
+			}
 		}
 
 		// STEPPED CLEAR OF YOUR OWN BODY. rs_held.zs found this the hard way: an
@@ -531,6 +578,12 @@ class RS_VRGrenade : Weapon
 		{
 			g.target = pmo;          // credits the kill, the obituary and the score
 			g.Vel    = v;
+			// Clamped, not trusted outright: this crossed a Service as a raw
+			// int divided back into a double, and a generous safety margin
+			// here costs nothing while a garbage value turning into a
+			// hundred-degree-per-tic pinwheel would be very visible.
+			g.wristPitch = clamp(spin.y, -15.0, 15.0);
+			g.wristRoll  = clamp(spin.z, -15.0, 15.0);
 			// A cooked grenade arrives with its fuse already part burned -- that is
 			// the whole point of cooking one.
 			g.mFuse  = lit ? fuse
@@ -905,6 +958,16 @@ class RS_VRGrenadeThrown : Actor
 	bool mLive;      // the pin was out when it left your hand
 	int  lastTickTic;
 
+	// YOUR OWN WRIST, ADDED ON TOP OF THE LAZY DEFAULT. Degrees per tic,
+	// captured once at launch from RS_ThrowService and held for the whole
+	// flight -- the same "measured once, spent as a constant rate" shape the
+	// lazy tumble below already used, and consistent with there being no spin
+	// damping modelled anywhere else in this file. Zero when the service was
+	// not there to ask, which just means the grenade tumbles exactly as it
+	// always did.
+	double wristPitch;
+	double wristRoll;
+
 	// The same cadence the weapon uses, on the thrown grenade's own fuse.
 	bool ThrownRed() const
 	{
@@ -1036,8 +1099,14 @@ class RS_VRGrenadeThrown : Actor
 		if (!grounded)
 		{
 			double sp = RS_VRGrenade.Num("rsvg_spin", 3.5);
-			roll  += sp;
-			pitch += sp * 0.43;   // not a neat ratio, so it never looks metronomic
+			// The lazy baseline always turns, so a throw with no measurable
+			// wrist spin still reads as a thrown object and not a dead prop.
+			// The wrist component rides on top of it rather than replacing
+			// it -- a hard flick spins visibly harder, a gentle toss stays
+			// close to the baseline it always had.
+			double wristScale = RS_VRGrenade.Num("rsvg_spin_wrist", 1.0);
+			roll  += sp + wristRoll  * wristScale;
+			pitch += sp * 0.43 + wristPitch * wristScale;   // 0.43: not a neat ratio, so it never looks metronomic
 		}
 		else
 		{
@@ -1262,7 +1331,7 @@ class RS_VRGrenadeHandler : EventHandler
 	// Deliberately NOT a blanket reset -- it corrects the specific values that
 	// were wrong and leaves seating, fuse length and everything else alone. A
 	// migration that flattens hand-tuned numbers is worse than the bug.
-	const CFG_VERSION = 1;
+	const CFG_VERSION = 2;
 
 	private void Migrate()
 	{
@@ -1274,6 +1343,19 @@ class RS_VRGrenadeHandler : EventHandler
 		// anything else is a number someone chose.
 		let g = CVar.GetCVar("rsvg_gravity", players[consoleplayer]);
 		if (g && g.GetFloat() > 0.5) g.SetFloat(0.27);
+
+		// v2: rsvg_debug shipped `true` while its own CVARINFO comment said
+		// "ships OFF" -- every install has been printing the alive/gesture/
+		// face traces to console once a second since day one. UNLIKE the
+		// gravity fix above, `true` here cannot be told apart from a player
+		// who genuinely turned debug tracing on: it is the same value either
+		// way. The odds overwhelmingly favour "nobody meant this" -- toggling
+		// on a per-tic console spam is not something a player does by
+		// accident in the other direction, and the trace is harmless to turn
+		// back on again -- so this corrects it unconditionally rather than
+		// leaving a bug silently indistinguishable from a choice.
+		let dbg = CVar.GetCVar("rsvg_debug", players[consoleplayer]);
+		if (dbg && dbg.GetBool()) dbg.SetBool(false);
 
 		v.SetInt(CFG_VERSION);
 		Console.Printf("[RSVG] settings updated to v%d", CFG_VERSION);

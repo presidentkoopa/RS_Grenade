@@ -26,7 +26,16 @@ user float rsvg_face_far  = 24.0;
 user bool  rsvg_face = true;
 
 // Ships OFF, matching every other subsystem trace in this family.
-user bool  rsvg_debug = true;
+//
+// IT DID NOT. Found while touching this file for the throw upgrade below --
+// the default here was `true`, directly contradicting its own comment, which
+// means every install has been printing the alive/gesture/face traces to
+// console every second since the day this shipped. Corrected, and see
+// rsvg_cfgver: an existing ini already carrying `1` from playing keeps that
+// value untouched, so this reaches only fresh installs on its own -- anyone
+// already running it explicitly turns it off once, same as any other
+// hand-tuned setting.
+user bool  rsvg_debug = false;
 
 user bool rsvg_start = true;
 
@@ -97,8 +106,19 @@ user int rsvg_cfgver = 0;
 user float rsvg_friction = 0.82;
 
 // Tumble in the air, degrees per tic. 0 is dead still -- Brutal Doom's grenade
-// does not rotate its model at all and reads fine, so this is taste.
+// does not rotate its model at all and reads fine, so this is taste. This is
+// a FLAT BASELINE that always applies -- see rsvg_spin_wrist below for the
+// part that comes from how you actually threw it.
 user float rsvg_spin = 3.5;
+
+// HOW MUCH OF YOUR OWN WRIST SNAP RIDES ON TOP OF THE BASELINE ABOVE.
+// RS_ThrowService already measures this (RS_ShieldSaw's spin comes from the
+// same request) -- the grenade just never asked before. 0 disables it and
+// every throw tumbles identically again, exactly as before this existed. 1.0
+// adds your measured wrist rate degree-for-degree; higher exaggerates it.
+// Silently 0 in effect if RS_WorldHands (or RS_ThrowService) is not loaded --
+// there is no local fallback for spin, only for the throw's velocity.
+user float rsvg_spin_wrist = 1.0;
 
 // HOW THE HELD GRENADE IS DRAWN. Nothing about the gestures changes -- the pin
 // and the throw read real palm and HMD positions either way.
