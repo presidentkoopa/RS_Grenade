@@ -195,8 +195,11 @@ class RS_VRGrenade : Weapon
 
 	private void TrackSwing(PlayerPawn pmo, int hand)
 	{
-		Vector3 native = (hand == 0) ? pmo.AttackVel : pmo.OffhandVel;
-		swing[swingIdx] = native / TICRATE;
+		// NOT named "native": that is a ZScript keyword, and a local called it
+		// took the whole load down ("Unexpected 'native'"). This file was packed
+		// stale for a day, so nothing caught it until the pack was current.
+		Vector3 handVel = (hand == 0) ? pmo.AttackVel : pmo.OffhandVel;
+		swing[swingIdx] = handVel / TICRATE;
 		swingIdx = (swingIdx + 1) % SWING_SAMPLES;
 	}
 
