@@ -232,6 +232,27 @@ class RS_VRGrenade : Weapon
 		                   : ((p.cmd.buttons & BT_OFFHANDATTACK) != 0);
 	}
 
+	// THE PIN, ASKED FOR (netplay, 2026-09-14). Single-player pulls on the spot, as
+	// it always has. In a netgame only the thrower's machine gets here (DoEffect
+	// returns before the gestures everywhere else), and it sends rsvg-arm with the
+	// hand; every machine pulls when that arrives (ArmFromEvent). The haptics and
+	// sound around the call stay on the thrower's machine.
+	private void RequestPin(PlayerPawn pmo, int hand)
+	{
+		if (!multiplayer) { PullPin(); return; }
+		if (pmo.PlayerNumber() == consoleplayer)
+			EventHandler.SendNetworkEvent("rsvg-arm", hand);
+	}
+
+	// RSVG-ARM, APPLIED ON EVERY MACHINE: the pin comes out of the grenade held in
+	// that hand. Refused when it is no longer in that hand, so a late event cannot
+	// arm one put away or passed across since.
+	void ArmFromEvent(int hand)
+	{
+		if (!Owner || !InHand() || Hand() != hand) return;
+		PullPin();
+	}
+
 	void PullPin()
 	{
 		if (gState != GS_SAFE) return;
@@ -799,6 +820,18 @@ class RS_VRGrenade : Weapon
 
 		Vector3 palm = Palm(pmo, hand);
 
+		// THE PIN IS DECIDED ON THE THROWER'S MACHINE ONLY (netplay, 2026-09-14).
+		// Both routes below test palm and head positions -- AttackPos, OffhandPos,
+		// HmdPos -- which are real only on the machine whose headset they come
+		// from. Everywhere else they are stand-ins, so each machine could decide
+		// the pull differently: a grenade cooking on some machines and not others,
+		// and the cook-off blast only where it cooked. So in a netgame the other
+		// machines skip the gestures entirely -- no pull, no prompt, no haptics on
+		// the wrong headset -- and pull when the thrower's machine sends rsvg-arm
+		// (RequestPin, RS_VRGrenadeHandler.NetworkProcess). Single-player runs as
+		// it always has.
+		if (multiplayer && pmo.PlayerNumber() != consoleplayer) return;
+
 		// ---- THE OPPOSITE HAND TAKES THE PIN -------------------------------
 		//
 		// A PLAIN DISTANCE, palm to palm.
@@ -827,7 +860,7 @@ class RS_VRGrenade : Weapon
 		// your view of the room alone.
 		if (ofire && !wasOtherFire && onIt && Flag("rsvg_offhand_pin", false))
 		{
-			PullPin();
+			RequestPin(pmo, hand);
 			level.VRHaptic(other, 0.7, 60.0);
 			level.VRHaptic(hand,  0.4, 40.0);
 			if (Flag("rsvg_debug", false))
@@ -917,7 +950,7 @@ class RS_VRGrenade : Weapon
 			{
 				wasFaceNear = true;
 				faceTic = 0;
-				PullPin();
+				RequestPin(pmo, hand);
 
 				// A BANG, NOT A TAP. The taps while the hold fills are deliberately
 				// small so that the moment it COMPLETES has somewhere to go -- a
@@ -1212,10 +1245,16 @@ class RS_VRGrenadeThrown : Actor
 			// At rest is kept as a second route so one thrown into a corner you never
 			// walk to still stops being a projectile.
 			bool old   = mAge >= int(RS_VRGrenade.Num("rsvg_dud_delay", 35.0));
+			// ANY PLAYER, IN PLAYER ORDER, FROM PLAYSIM POSITIONS (netplay, 2026-09-14).
+			// This read players[consoleplayer] -- a different player on every machine --
+			// so each machine turned the dud into a pickup at a different moment.
 			bool near  = false;
-			let pmo = players[consoleplayer].mo;
-			if (pmo)
-				near = (pmo.Pos - Pos).Length() <= RS_VRGrenade.Num("rsvg_dud_range", 96.0);
+			double dudRange = RS_VRGrenade.Num("rsvg_dud_range", 96.0);
+			for (int pn = 0; pn < MAXPLAYERS && !near; pn++)
+			{
+				if (!playeringame[pn] || !players[pn].mo) continue;
+				near = (players[pn].mo.Pos - Pos).Length() <= dudRange;
+			}
 
 			if ((old && near) || (grounded && Vel.Length() < 0.15))
 			{
@@ -1394,8 +1433,10 @@ class RS_VRGrenadeHandler : EventHandler
 		// Doom gravity is ~2.7x earth, so 0.7 made every throw a descending line.
 		// 0.27 is the arc. Only corrected if it is still sitting at the old value:
 		// anything else is a number someone chose.
+		// rsvg_gravity is a SERVER setting now (CVARINFO): corrected only where this
+		// machine owns the value -- single-player -- never by a client in a netgame.
 		let g = CVar.GetCVar("rsvg_gravity", players[consoleplayer]);
-		if (g && g.GetFloat() > 0.5) g.SetFloat(0.27);
+		if (!multiplayer && g && g.GetFloat() > 0.5) g.SetFloat(0.27);
 
 		// v2: rsvg_debug shipped `true` while its own CVARINFO comment said
 		// "ships OFF" -- every install has been printing the alive/gesture/
@@ -1426,17 +1467,23 @@ class RS_VRGrenadeHandler : EventHandler
 		if (am && am.Amount < 10) am.Amount = 10;
 	}
 
-	// RSVG-THROW: the velocity the thrower's machine measured, in thousandths of
-	// a map unit per tic, thrown from on every machine (RS_VRGrenade.MeasureThrow
-	// says why). Sent only in a netgame; single-player throws on the spot.
+	// THE GRENADE'S TWO NETWORK EVENTS, both sent only in a netgame and only by the
+	// thrower's machine; single-player acts on the spot.
+	//   rsvg-arm    args: the hand. The pin comes out (RS_VRGrenade.ArmFromEvent).
+	//   rsvg-throw  args: the velocity in thousandths of a map unit per tic
+	//               (RS_VRGrenade.MeasureThrow says why), thrown from on every machine.
 	override void NetworkProcess(ConsoleEvent e)
 	{
-		if (!(e.Name ~== "rsvg-throw")) return;
+		bool isArm   = (e.Name ~== "rsvg-arm");
+		bool isThrow = (e.Name ~== "rsvg-throw");
+		if (!isArm && !isThrow) return;
 		if (e.Player < 0 || e.Player >= MAXPLAYERS || !playeringame[e.Player]) return;
 		let pmo = players[e.Player].mo;
 		if (!pmo) return;
 		let nade = RS_VRGrenade(pmo.FindInventory("RS_VRGrenade"));
-		if (nade) nade.ThrowFromEvent((e.Args[0] / 1000.0, e.Args[1] / 1000.0, e.Args[2] / 1000.0));
+		if (!nade) return;
+		if (isArm) nade.ArmFromEvent(e.Args[0]);
+		else        nade.ThrowFromEvent((e.Args[0] / 1000.0, e.Args[1] / 1000.0, e.Args[2] / 1000.0));
 	}
 }
 
