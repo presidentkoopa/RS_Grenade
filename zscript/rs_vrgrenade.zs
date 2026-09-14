@@ -490,10 +490,19 @@ class RS_VRGrenade : Weapon
 	// What leaves your hand is a different actor, and that split is honest: in
 	// your hand it is a weapon you are holding, in the air it is an object Doom
 	// is moving. Nothing pretends otherwise.
-	private void ThrowIt(PlayerPawn pmo, PlayerInfo p)
+	// THE THROW'S VELOCITY, MEASURED WHERE THE HAND IS (netplay, 2026-09-14).
+	//
+	// Both routes below read this machine's own controller: RS_ThrowService
+	// samples the console player's swing (RS_WorldHands rs_swing.zs), and
+	// SwingPeak reads AttackVel / OffhandVel, which only this machine's VR device
+	// writes. DoEffect runs on every machine, so asking from there on each of
+	// them threw one grenade a different way on each. In a netgame it is measured
+	// once, by the thrower's machine, and sent in rsvg-throw's args
+	// (RS_VRGrenadeHandler.NetworkProcess); every machine throws from those
+	// numbers. Single-player measures and throws on the same tic, as it always has.
+	Vector3 MeasureThrow(PlayerPawn pmo)
 	{
 		int hand = Hand();
-		Vector3 palm = Palm(pmo, hand);
 
 		// The velocity is the PEAK of your arm's motion over the last
 		// ~180ms rather than its speed at the instant you let go. Your arm is
@@ -516,16 +525,6 @@ class RS_VRGrenade : Weapon
 		Vector3 v = (0, 0, 0);
 		bool shared = false;
 
-		// THE WRIST'S OWN SPIN, IF THE SERVICE HAS IT. This grenade has always
-		// tumbled at a fixed lazy rate (rsvg_spin/its 0.43 pitch ratio) no
-		// matter how it left your hand -- every throw spun identically, gentle
-		// toss or hard flick alike. RS_ShieldSaw already reads this same
-		// request for its own spin; the grenade never had a reason to and now
-		// does. (yaw, pitch, roll), degrees per tic -- see RS_Throw.SpinFor.
-		// Only yaw is left unused below: a roughly round grenade does not read
-		// as spinning about its own vertical axis the way roll and pitch do.
-		Vector3 spin = (0, 0, 0);
-
 		ServiceIterator sit = ServiceIterator.Find("RS_ThrowService");
 		Service sv;
 		while (sv = sit.Next())
@@ -536,9 +535,6 @@ class RS_VRGrenade : Weapon
 			v = ( sv.GetInt("throw.vel.x", "", hand, 0, pmo, 'RS_Grenade') / 1000.0,
 			      sv.GetInt("throw.vel.y", "", hand, 0, pmo, 'RS_Grenade') / 1000.0,
 			      sv.GetInt("throw.vel.z", "", hand, 0, pmo, 'RS_Grenade') / 1000.0 );
-			spin = ( sv.GetInt("throw.spin.yaw",   "", hand, 0, pmo, 'RS_Grenade') / 1000.0,
-			         sv.GetInt("throw.spin.pitch", "", hand, 0, pmo, 'RS_Grenade') / 1000.0,
-			         sv.GetInt("throw.spin.roll",  "", hand, 0, pmo, 'RS_Grenade') / 1000.0 );
 			shared = true;
 			break;
 		}
@@ -561,6 +557,49 @@ class RS_VRGrenade : Weapon
 				double flat = (v.x, v.y, 0).Length();
 				v.z += flat * lift;
 			}
+		}
+		return v;
+	}
+
+	// RSVG-THROW, APPLIED ON EVERY MACHINE: the grenade leaves the hand holding
+	// it with the velocity the thrower's machine measured. Refused when it is no
+	// longer in a hand, so a late event cannot throw a grenade put away since.
+	void ThrowFromEvent(Vector3 v)
+	{
+		if (!Owner || !InHand()) return;
+		let pmo = PlayerPawn(Owner);
+		if (!pmo || !pmo.player) return;
+		ThrowIt(pmo, pmo.player, v);
+	}
+
+	// v: the throw's velocity, from MeasureThrow -- on this tic in single-player,
+	// or out of rsvg-throw in a netgame.
+	private void ThrowIt(PlayerPawn pmo, PlayerInfo p, Vector3 v)
+	{
+		int hand = Hand();
+		Vector3 palm = Palm(pmo, hand);
+
+		// THE WRIST'S OWN SPIN, IF THE SERVICE HAS IT. This grenade has always
+		// tumbled at a fixed lazy rate (rsvg_spin/its 0.43 pitch ratio) no
+		// matter how it left your hand -- every throw spun identically, gentle
+		// toss or hard flick alike. RS_ShieldSaw already reads this same
+		// request for its own spin; the grenade never had a reason to and now
+		// does. (yaw, pitch, roll), degrees per tic -- see RS_Throw.SpinFor.
+		// Only yaw is left unused below: a roughly round grenade does not read
+		// as spinning about its own vertical axis the way roll and pitch do.
+		// Still asked on every machine: it turns only the flying grenade's
+		// tumble, its pitch and roll, not where it goes.
+		Vector3 spin = (0, 0, 0);
+
+		ServiceIterator sit = ServiceIterator.Find("RS_ThrowService");
+		Service sv;
+		while (sv = sit.Next())
+		{
+			if (sv.GetInt("throw.hello", "", 0, 0, null, 'None') != 1) continue;
+			spin = ( sv.GetInt("throw.spin.yaw",   "", hand, 0, pmo, 'RS_Grenade') / 1000.0,
+			         sv.GetInt("throw.spin.pitch", "", hand, 0, pmo, 'RS_Grenade') / 1000.0,
+			         sv.GetInt("throw.spin.roll",  "", hand, 0, pmo, 'RS_Grenade') / 1000.0 );
+			break;
 		}
 
 		// STEPPED CLEAR OF YOUR OWN BODY. rs_held.zs found this the hard way: an
@@ -729,7 +768,18 @@ class RS_VRGrenade : Weapon
 		if (wasTrig && !trig)
 		{
 			wasTrig = false;
-			ThrowIt(pmo, p);
+			// THE THROW, IN SYNC (see MeasureThrow). Single-player throws now, as
+			// it always did. In a netgame only the thrower's machine measures, and
+			// it sends the numbers; every machine throws when rsvg-throw arrives.
+			if (!multiplayer)
+			{
+				ThrowIt(pmo, p, MeasureThrow(pmo));
+			}
+			else if (pmo.PlayerNumber() == consoleplayer)
+			{
+				Vector3 tv = MeasureThrow(pmo);
+				EventHandler.SendNetworkEvent("rsvg-throw", int(tv.x * 1000.0), int(tv.y * 1000.0), int(tv.z * 1000.0));
+			}
 			if (Flag("rsvg_debug", false))
 				Console.Printf("[RSVG] thrown from hand %d", hand);
 			return;
@@ -1374,6 +1424,19 @@ class RS_VRGrenadeHandler : EventHandler
 			pmo.GiveInventory("RS_VRGrenade", 1);
 		let am = Ammo(pmo.FindInventory("RSVG_Ammo"));
 		if (am && am.Amount < 10) am.Amount = 10;
+	}
+
+	// RSVG-THROW: the velocity the thrower's machine measured, in thousandths of
+	// a map unit per tic, thrown from on every machine (RS_VRGrenade.MeasureThrow
+	// says why). Sent only in a netgame; single-player throws on the spot.
+	override void NetworkProcess(ConsoleEvent e)
+	{
+		if (!(e.Name ~== "rsvg-throw")) return;
+		if (e.Player < 0 || e.Player >= MAXPLAYERS || !playeringame[e.Player]) return;
+		let pmo = players[e.Player].mo;
+		if (!pmo) return;
+		let nade = RS_VRGrenade(pmo.FindInventory("RS_VRGrenade"));
+		if (nade) nade.ThrowFromEvent((e.Args[0] / 1000.0, e.Args[1] / 1000.0, e.Args[2] / 1000.0));
 	}
 }
 
