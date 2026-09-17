@@ -1,0 +1,1 @@
+VR grenade. Pull pin with offhand or with your face. Grenade starts to flash red faster and faster. Better throw that shit. Working and playable, but the throw distance could be further - I'm workin on it. 
